@@ -4,15 +4,33 @@
 
 ## 安装
 
+安装后即可直接在终端使用 `repowiki-cli` 命令（无需 `uv run` 前缀）：
+
 ```bash
-uv sync                # 安装依赖（从源码）
-uv run repowiki-cli --help
+# 方式一：从源码安装（当前目录）
+pip install .            # 或 pip install -e .（开发模式，改代码即时生效）
+
+# 方式二：uv 安装为命令行工具（当前目录）
+uv tool install .
+
+# 方式三：从 PyPI（包发布后）
+pip install repowiki-cli
 ```
 
-## 查看帮助与版本
+验证安装：
 
 ```bash
-$ uv run repowiki-cli --help
+$ repowiki-cli --version
+```
+
+```
+repowiki-cli 0.1.0
+```
+
+## 查看帮助
+
+```bash
+$ repowiki-cli --help
 ```
 
 ```
@@ -29,18 +47,10 @@ $ uv run repowiki-cli --help
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
-```bash
-$ uv run repowiki-cli --version
-```
-
-```
-repowiki-cli 0.1.0
-```
-
 ## structure — 目录结构
 
 ```bash
-$ uv run repowiki-cli structure facebook/react
+$ repowiki-cli structure facebook/react
 ```
 
 ```
@@ -90,7 +100,7 @@ Available pages for facebook/react:
 输出可能很长（完整 dump，不分页）。
 
 ```bash
-$ uv run repowiki-cli contents facebook/react
+$ repowiki-cli contents facebook/react
 ```
 
 ```
@@ -115,7 +125,7 @@ The following files were used as context for generating this wiki page:
 ## ask — 单次问答
 
 ```bash
-$ uv run repowiki-cli ask facebook/react "What is Fiber?"
+$ repowiki-cli ask facebook/react "What is Fiber?"
 ```
 
 ```
@@ -157,7 +167,7 @@ View this search on DeepWiki: https://deepwiki.com/search/what-is-fiber_eb93395d
 省略 `question` 参数即进入交互模式；输入 `/exit`（或 `/quit`、`/q`、Ctrl-C、Ctrl-D）退出。
 
 ```bash
-$ uv run repowiki-cli ask facebook/react
+$ repowiki-cli ask facebook/react
 ```
 
 ```
@@ -190,7 +200,7 @@ The `scheduler` package defines six discrete priority levels, which guide task e
 仓库名非法（不足两段）：
 
 ```bash
-$ uv run repowiki-cli structure facebook
+$ repowiki-cli structure facebook
 ```
 
 ```
@@ -201,7 +211,7 @@ Error: invalid repository reference: 'facebook'. Expected owner/repo, github.com
 仓库未索引（不存在）：
 
 ```bash
-$ uv run repowiki-cli structure facebook/this-repo-definitely-does-not-exist-xyz123
+$ repowiki-cli structure facebook/this-repo-definitely-does-not-exist-xyz123
 ```
 
 ```
@@ -215,3 +225,5 @@ Error: Error fetching wiki for facebook/this-repo-definitely-does-not-exist-xyz1
 uv sync
 uv run pytest        # 37 个测试全部离线可跑
 ```
+
+> 注：`uv tool install .` 装的是当前源码快照；改代码后需 `uv tool upgrade repowiki-cli`（或 `uv tool install --force .`）重新安装。若用 `pip install -e .` 开发模式则无需重装。
