@@ -7,6 +7,7 @@ import logging
 import os
 from typing import Any
 
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
@@ -28,6 +29,20 @@ class ToolError(DeepWikiError):
     """Error returned from an MCP tool execution."""
 
 
+def _root_cause(exc: BaseException) -> BaseException:
+    """Unwrap an exception group (Python 3.11+) to its first leaf cause."""
+    while (sub := getattr(exc, "exceptions", None)):
+        exc = sub[0]
+    return exc
+
+
+def _is_connection_failure(exc: BaseException) -> bool:
+    if isinstance(exc, (OSError, httpx.TransportError)):
+        return True
+    message = str(exc).lower()
+    return "connection" in message or "timeout" in message
+
+
 class DeepWikiClient:
     """Client for interacting with DeepWiki via MCP."""
 
@@ -40,14 +55,14 @@ class DeepWikiClient:
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.call_tool(tool_name, arguments)
-                    return self._extract_text_content(result)
-        except DeepWikiError:
-            raise
         except Exception as exc:
-            message = str(exc).lower()
-            if "connection" in message or "timeout" in message:
-                raise ConnectionError(f"Failed to connect to DeepWiki server: {exc}") from exc
-            raise ToolError(f"Tool '{tool_name}' failed: {exc}") from exc
+            root = _root_cause(exc)
+            if _is_connection_failure(root):
+                raise ConnectionError(
+                    f"Failed to connect to DeepWiki server: {root}"
+                ) from exc
+            raise ToolError(f"Tool '{tool_name}' failed: {root}") from exc
+        return self._extract_text_content(result)
 
     def _extract_text_content(self, result: Any) -> str:
         parts = [c.text for c in result.content if getattr(c, "type", None) == "text"]

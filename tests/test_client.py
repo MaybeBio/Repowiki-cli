@@ -1,8 +1,18 @@
+import builtins
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
-from repowiki.client import DeepWikiClient, ToolError
+from repowiki import client as client_mod
+from repowiki.client import (
+    ConnectionError,
+    DeepWikiClient,
+    ToolError,
+    _is_connection_failure,
+    _root_cause,
+)
 
 
 def _content(text):
@@ -58,3 +68,79 @@ async def test_read_wiki_structure_builds_arguments():
     result = await client.read_wiki_structure("facebook/react")
     assert result == "toc"
     assert calls == [("read_wiki_structure", {"repoName": "facebook/react"})]
+
+
+def test_root_cause_identity_for_plain_exception():
+    exc = RuntimeError("boom")
+    assert _root_cause(exc) is exc
+
+
+def test_root_cause_unwraps_exception_group():
+    group_cls = getattr(builtins, "BaseExceptionGroup", None)
+    if group_cls is None:
+        pytest.skip("BaseExceptionGroup requires Python 3.11+")
+    leaf = RuntimeError("boom")
+    assert _root_cause(group_cls("nested", [leaf])) is leaf
+
+
+def test_is_connection_failure():
+    assert _is_connection_failure(OSError("Connection refused")) is True
+    assert _is_connection_failure(httpx.ConnectError("boom")) is True
+    assert _is_connection_failure(RuntimeError("boom")) is False
+
+
+@asynccontextmanager
+async def _raising_streamablehttp(url, exc):
+    raise exc
+    yield  # pragma: no cover
+
+
+@pytest.mark.asyncio
+async def test_call_tool_classifies_connection_failure(monkeypatch):
+    monkeypatch.setattr(
+        client_mod,
+        "streamablehttp_client",
+        lambda url: _raising_streamablehttp(url, ConnectionRefusedError("Connection refused")),
+    )
+    client = DeepWikiClient()
+    with pytest.raises(ConnectionError):
+        await client._call_tool("read_wiki_structure", {"repoName": "x/y"})
+
+
+@pytest.mark.asyncio
+async def test_call_tool_classifies_tool_failure(monkeypatch):
+    monkeypatch.setattr(
+        client_mod,
+        "streamablehttp_client",
+        lambda url: _raising_streamablehttp(url, RuntimeError("boom")),
+    )
+    client = DeepWikiClient()
+    with pytest.raises(ToolError, match="boom"):
+        await client._call_tool("read_wiki_structure", {"repoName": "x/y"})
+
+
+@pytest.mark.asyncio
+async def test_call_tool_surfaces_tool_error_message(monkeypatch):
+    result = _result(True, ["Repository not found"])
+
+    @asynccontextmanager
+    async def fake_streamablehttp(url):
+        yield (object(), object(), object())
+
+    class _FakeSession:
+        async def initialize(self):
+            return None
+
+        async def call_tool(self, tool_name, arguments):
+            return result
+
+    @asynccontextmanager
+    async def fake_client_session(read, write):
+        yield _FakeSession()
+
+    monkeypatch.setattr(client_mod, "streamablehttp_client", fake_streamablehttp)
+    monkeypatch.setattr(client_mod, "ClientSession", fake_client_session)
+
+    client = DeepWikiClient()
+    with pytest.raises(ToolError, match="Repository not found"):
+        await client._call_tool("read_wiki_structure", {"repoName": "x/y"})

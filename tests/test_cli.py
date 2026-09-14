@@ -58,3 +58,29 @@ def test_ask_repl(monkeypatch):
     result = runner.invoke(app, ["ask", "facebook/react"])
     assert result.exit_code == 0
     assert "answer to What is Fiber?" in result.output
+
+
+def test_tool_error_returns_exit_1(monkeypatch):
+    from repowiki.client import ToolError
+
+    class FailingClient:
+        async def read_wiki_structure(self, repo):
+            raise ToolError("Tool 'read_wiki_structure' failed: boom")
+
+    monkeypatch.setattr("repowiki.cli.DeepWikiClient", FailingClient)
+    result = runner.invoke(app, ["structure", "facebook/react"])
+    assert result.exit_code == 1
+    assert "Error" in result.output
+
+
+def test_connection_error_returns_exit_1(monkeypatch):
+    from repowiki.client import ConnectionError
+
+    class FailingClient:
+        async def read_wiki_structure(self, repo):
+            raise ConnectionError("Failed to connect to DeepWiki server")
+
+    monkeypatch.setattr("repowiki.cli.DeepWikiClient", FailingClient)
+    result = runner.invoke(app, ["structure", "facebook/react"])
+    assert result.exit_code == 1
+    assert "Could not connect" in result.output
