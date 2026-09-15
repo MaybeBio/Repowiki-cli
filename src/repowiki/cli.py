@@ -461,9 +461,9 @@ def list_indexes(
     if json:
         typer.echo(format_command_json(
             "list", search=search,
-            indices=result.get("indices", []),
-            needs_reindex=result.get("needs_reindex", []),
-            pending_repos=result.get("pending_repos", []),
+            indices=result.get("indices") or [],
+            needs_reindex=result.get("needs_reindex") or [],
+            pending_repos=result.get("pending_repos") or [],
         ))
         return
     typer.echo(format_list(result))
@@ -487,7 +487,7 @@ def status_cmd(
     except Exception as exc:
         _handle_exception(exc, json)
     if json:
-        typer.echo(format_command_json("status", repo=resolved, status=result.get("status")))
+        typer.echo(format_command_json("status", repo=resolved, status=result.get("status") or "unknown"))
         return
     typer.echo(format_status(resolved, result))
 
@@ -506,7 +506,7 @@ def warm(
     except Exception as exc:
         _handle_exception(exc, json)
     if json:
-        typer.echo(format_command_json("warm", repo=resolved, status=result.get("status")))
+        typer.echo(format_command_json("warm", repo=resolved, status=result.get("status") or "OK"))
         return
     typer.echo(format_warm(resolved, result))
 
