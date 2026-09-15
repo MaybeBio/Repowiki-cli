@@ -197,12 +197,12 @@ async def _repl(resolved: str, rich: bool, save_path: str | None) -> None:
             except Exception as exc:
                 _print_error(exc)
                 continue
-            _append_save(save_path, resolved, q, answer)
+            _append_save(save_path, resolved, q, answer.body)
             typer.echo()
             if rich:
-                render_markdown(answer.strip())
+                render_markdown(answer.body.strip())
             else:
-                typer.echo(answer.strip())
+                typer.echo(answer.body.strip())
             typer.echo()
 
 
@@ -281,11 +281,11 @@ def ask(
         client = DeepWikiClient()
         try:
             with status("Thinking..."):
-                text = run_async(client.ask_question(resolved, question))
+                answer = run_async(client.ask_question(resolved, question))
         except Exception as exc:
             _handle_exception(exc, json)
-        _emit(resolved, "ask", text, rich, json, question=question, answer=text)
-        _append_save(save_path, resolved, question, text)
+        _emit(resolved, "ask", answer.body, rich, json, question=question, answer=answer.body)
+        _append_save(save_path, resolved, question, answer.body)
         return
 
     if json:

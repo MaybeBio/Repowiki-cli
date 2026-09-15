@@ -3,6 +3,7 @@ import json
 from typer.testing import CliRunner
 
 from repowiki.cli import app
+from repowiki.model import Answer
 
 runner = CliRunner()
 
@@ -60,7 +61,7 @@ def test_ask_repl(monkeypatch):
             pass
 
         async def ask_question(self, repo, question):
-            return f"answer to {question}"
+            return Answer(body=f"answer to {question}")
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FakeClient)
     result = runner.invoke(app, ["ask", "facebook/react"])
@@ -86,7 +87,7 @@ def test_ask_repl_uses_prominent_marker(monkeypatch):
             pass
 
         async def ask_question(self, repo, question):
-            return f"answer to {question}"
+            return Answer(body=f"answer to {question}")
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FakeClient)
     result = runner.invoke(app, ["ask", "facebook/react"])
@@ -295,7 +296,7 @@ def test_ask_save_repl_appends(monkeypatch, tmp_path):
             pass
 
         async def ask_question(self, repo, question):
-            return f"answer to {question}"
+            return Answer(body=f"answer to {question}")
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FakeClient)
     out = tmp_path / "qa.md"

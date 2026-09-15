@@ -12,6 +12,8 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
+from repowiki.model import Answer
+
 logging.getLogger("httpx_sse").setLevel(logging.ERROR)
 logging.getLogger("mcp.client.streamable_http").setLevel(logging.ERROR)
 
@@ -156,10 +158,11 @@ class DeepWikiClient:
     async def read_wiki_contents(self, repo_name: str) -> str:
         return await self._call_tool("read_wiki_contents", {"repoName": repo_name})
 
-    async def ask_question(self, repo_name: str, question: str) -> str:
-        return await self._call_tool(
+    async def ask_question(self, repo_name: str, question: str) -> Answer:
+        text = await self._call_tool(
             "ask_question", {"repoName": repo_name, "question": question}
         )
+        return Answer(body=text)
 
 
 def run_async(coro: Any) -> Any:

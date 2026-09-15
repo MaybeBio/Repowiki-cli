@@ -51,7 +51,7 @@ async def test_ask_question_builds_arguments():
 
     client._call_tool = fake_call
     result = await client.ask_question("facebook/react", "What is Fiber?")
-    assert result == "answer"
+    assert result.body == "answer"
     assert calls == [("ask_question", {"repoName": "facebook/react", "question": "What is Fiber?"})]
 
 
@@ -205,5 +205,5 @@ async def test_persistent_session_reuses_connection(monkeypatch):
 
     assert state["initialized"] == 1
     assert state["calls"] == 2
-    assert first == "answer-1"
-    assert second == "answer-2"
+    assert first.body == "answer-1"
+    assert second.body == "answer-2"
