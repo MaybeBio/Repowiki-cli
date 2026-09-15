@@ -331,6 +331,19 @@ def test_ask_invalid_mode(monkeypatch):
     assert "Error" in result.output
 
 
+def test_ask_devin_unindexed_exit_2(monkeypatch):
+    from repowiki.client import ToolError
+
+    class FailingDevin:
+        async def ask(self, repo, question, *, mode="fast", query_id=None):
+            raise ToolError("Devin API returned HTTP 400: Repos not found")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FailingDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    assert result.exit_code == 2
+    assert "Repos not found" in result.output
+
+
 def test_ask_sources_renders_slices(monkeypatch):
     class FakeDevin:
         async def ask(self, repo, question, *, mode="fast", query_id=None):

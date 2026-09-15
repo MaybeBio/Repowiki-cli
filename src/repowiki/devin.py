@@ -63,6 +63,17 @@ DEFAULT_API_URL = "https://api.devin.ai"
 ENGINE_MAP = {"fast": "multihop_faster", "deep": "agent", "codemap": "codemap"}
 
 
+def _http_detail(exc: httpx.HTTPStatusError) -> str:
+    """Surface FastAPI's ``{"detail": ...}`` body so the CLI can classify it."""
+    try:
+        detail = exc.response.json().get("detail")
+    except Exception:
+        return ""
+    if isinstance(detail, str) and detail:
+        return f": {detail}"
+    return ""
+
+
 class DevinClient:
     """Client for the reverse-engineered api.devin.ai Q&A endpoints."""
 
@@ -115,7 +126,9 @@ class DevinClient:
         except httpx.TransportError as exc:
             raise ConnectionError(f"Failed to connect to Devin server: {exc}") from exc
         except httpx.HTTPStatusError as exc:
-            raise ToolError(f"Devin API returned HTTP {exc.response.status_code}") from exc
+            raise ToolError(
+                f"Devin API returned HTTP {exc.response.status_code}{_http_detail(exc)}"
+            ) from exc
         assert query is not None
         if query.get("error"):
             raise ToolError(str(query["error"]))

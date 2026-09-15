@@ -132,6 +132,19 @@ async def test_devin_ask_connection_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_devin_ask_http_error_surfaces_detail(monkeypatch):
+    exc = httpx.HTTPStatusError(
+        "400",
+        request=httpx.Request("POST", "http://x"),
+        response=httpx.Response(400, json={"detail": "Repos not found"}),
+    )
+    fake = _FakeAsyncClient(gets=[], post_exc=exc)
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    with pytest.raises(ToolError, match="Repos not found"):
+        await devin_mod.DevinClient().ask("a/b", "q?")
+
+
+@pytest.mark.asyncio
 async def test_devin_ask_query_error(monkeypatch):
     done = {"state": "done", "error": "Repository not found", "response": []}
     fake = _FakeAsyncClient(gets=[done])
