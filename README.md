@@ -3,13 +3,33 @@
 Query [DeepWiki](https://deepwiki.com) documentation for any public GitHub
 repository from your terminal.
 
+> 中文文档见 [README.zh-CN.md](README.zh-CN.md) · Chinese docs:
+> [README.zh-CN.md](README.zh-CN.md)
+
+## What it is
+
+`repowiki-cli` is a Python/Typer CLI that reads AI-generated repository
+documentation and answers questions about code, from the terminal. It speaks to
+**two backends** behind a single uniform command surface:
+
+| Backend | Transport | Commands | Richness |
+|---------|-----------|----------|----------|
+| **MCP** (official) | Streamable HTTP | `structure`, `contents`, `ask` | body only |
+| **Reverse** (`api.devin.ai`) | REST + WebSocket | `ask` (with flags) + `list` / `status` / `warm` / `get` | body, summary, references, sources, stats |
+
+The MCP backend is the official, documented DeepWiki server and is free for
+public repos with no auth. The reverse backend is the underlying engine
+`api.devin.ai` (same as the DeepWiki web app) — it is *not* a documented public
+API, but it exposes engine selection (`fast`/`deep`/`codemap`), streaming,
+conversation threading, and index-management endpoints that MCP does not.
+
 ## Install
 
 ```bash
 uvx repowiki-cli --help
 ```
 
-Or from source:
+From source:
 
 ```bash
 git clone <this-repo> && cd <this-repo>
@@ -17,149 +37,446 @@ uv sync
 uv run repowiki-cli --help
 ```
 
-## Usage
+## Quick start
+
+```bash
+repowiki-cli structure facebook/react          # table of contents
+repowiki-cli contents vercel/next.js           # full documentation
+repowiki-cli ask facebook/react "What is Fiber?"
+```
+
+## Command overview
+
+| Command | Purpose | Backend |
+|---------|---------|---------|
+| `structure REPO` | Print the documentation table of contents | MCP |
+| `contents REPO` | Print the full documentation | MCP |
+| `ask REPO [QUESTION]` | Answer a question (single-shot or interactive) | MCP by default; reverse with flags |
+| `list SEARCH` | Search indexed public repos | Reverse |
+| `status REPO` | Report a repo's indexing status | Reverse |
+| `warm REPO` | Pre-warm a repo's docs cache | Reverse |
+| `get QUERY_ID` | Replay a past answer by query id | Reverse |
+
+## Command reference
+
+### `structure`
+
+```bash
+repowiki-cli structure REPO [--json]
+```
+
+Prints the documentation table of contents (MCP `read_wiki_structure`).
+
+### `contents`
+
+```bash
+repowiki-cli contents REPO [--page TITLE] [--rich] [--json]
+```
+
+Prints the full documentation (MCP `read_wiki_contents`), which can be large.
+
+- `--page TITLE` — print only the page whose title matches (case-insensitive
+  exact match). The `# Page:` delimiter is dropped, so the selected page shows a
+  single heading. If no page matches, the available titles are listed (to
+  stderr) and the command exits with error kind `page_not_found`.
+- `--rich` — render Markdown with color/formatting via `rich`.
+- `--json` — emit a JSON envelope instead of Markdown.
+
+### `ask`
+
+```bash
+repowiki-cli ask REPO [QUESTION] \
+  [--rich] [--json] [--save [PATH]] \
+  [--mode fast|deep|codemap] [--id QUERY_ID] \
+  [--sources] [--no-summary] [--context TEXT] [--repo REPO]... \
+  [--mermaid] [--stream] [--timeout SECONDS]
+```
+
+With a `QUESTION`, it answers once and exits. Without one, it enters an
+interactive REPL (type `/exit` to quit).
+
+**Backend routing.** `ask` uses the MCP backend unless at least one reverse flag
+is present. Any of `--mode`, `--id`, `--sources`, `--repo`, `--context`,
+`--no-summary`, or `--stream` switches it to the reverse backend. `--mermaid`
+alone does **not** switch backends — pair it with `--mode codemap`.
+
+- `--mode fast|deep|codemap` — engine selection. Mapping to the underlying
+  engine id: `fast` → `multihop_faster`, `deep` → `agent`, `codemap` → `codemap`.
+- `--id QUERY_ID` — reuse a previous query id to continue the same conversation
+  thread.
+- `--sources` — append line-numbered source-code slices for each citation.
+- `--context TEXT` — pass additional context alongside the question.
+- `--no-summary` — skip summary generation.
+- `--repo REPO` — repeatable; ask one question against multiple repos at once
+  (the positional `repo` plus every `--repo`).
+- `--mermaid` — render a `codemap` answer as a Mermaid `flowchart TB`. If the
+  answer is not a codemap, it warns and falls back to plain text. Paste the
+  output into mermaid.live, GitHub, or VS Code to view it.
+- `--stream` — stream answer text chunk-by-chunk over a WebSocket instead of
+  waiting for the full answer, then append the summary and sources. No effect
+  with `--json`.
+- `--timeout SECONDS` — answer timeout for the reverse backend. Defaults to
+  `120`, or `300` for `--mode deep`. Overrides `DEEPWIKI_TIMEOUT`.
+- `--save [PATH]` — save each answer to a Markdown file (see *Saving*).
+- `--rich` — render the answer's Markdown with `rich`.
+- `--json` — emit a JSON envelope. Ignored in interactive mode.
+
+### `list`
+
+```bash
+repowiki-cli list SEARCH [--json]
+```
+
+Searches DeepWiki's public index (reverse `list_public_indexes`).
+
+### `status`
+
+```bash
+repowiki-cli status REPO [--json]
+```
+
+Reports a repo's indexing state (reverse `public_repo_indexing_status`).
+`unknown` is a normal result for an unindexed repo and exits `0`.
+
+### `warm`
+
+```bash
+repowiki-cli warm REPO [--json]
+```
+
+Pre-warms a repo's docs cache (reverse `warm_public_repo`).
+
+### `get`
+
+```bash
+repowiki-cli get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
+```
+
+Replays a past answer by query id (reverse `get_query`).
+
+## Design
+
+The whole CLI shares one result type, `Answer`, so both backends feed the same
+formatting layer:
+
+```python
+@dataclass
+class Answer:
+    body: str                          # main answer text
+    summary: str | None = None         # reverse backend only
+    references: list[Reference] = []   # {file_path, range_start, range_end}
+    sources: list[SourceFile] = []     # {repo, path, content}
+    stats: dict[str, float] = {}       # reverse backend only
+    query_id: str | None = None        # reverse backend only
+    truncated: bool = False
+```
+
+The MCP backend produces a bare `Answer(body=...)`. The reverse backend fills in
+summary, references, sources, stats, and query_id — all carried by `--json`.
+
+Source layout:
+
+```
+src/repowiki/
+  cli.py      # Typer commands, routing, REPL, retry/fallback
+  client.py   # MCP backend (DeepWikiClient) + error taxonomy
+  devin.py    # reverse backend (DevinClient): REST + WebSocket + polling
+  model.py    # Answer / Reference / SourceFile
+  output.py   # formatting, page filter, citation fill, Mermaid-adjacent render
+  codemap.py  # codemap JSON -> Mermaid flowchart
+  repo.py     # repo reference normalization
+  save.py     # --save file naming and append
+```
+
+## Backends in detail
+
+### MCP backend (`client.py`)
+
+- Endpoint: `DEEPWIKI_MCP_URL`, default `https://mcp.deepwiki.com/mcp`.
+- Speaks **Streamable HTTP** (the SSE endpoint is deprecated).
+- Tools: `read_wiki_structure`, `read_wiki_contents`, `ask_question`.
+- Tool arguments use camelCase: `repoName` (and `question` for `ask_question`).
+- Connection lifecycle:
+  - One-shot commands open/close a session per call.
+  - The interactive REPL opens **one** session and reuses it across questions.
+  - The initial connect is retried once on failure; a mid-session drop is
+    recovered by reopening once.
+
+### Reverse backend (`devin.py`)
+
+- Endpoint: `DEEPWIKI_API_URL`, default `https://api.devin.ai`.
+- Answer flow (`ask`):
+  1. `POST /ada/query` with the payload below, then either stream or poll.
+  2. **Streaming** — open `wss://…/ada/ws/query/{query_id}` and assemble the
+     answer from events.
+  3. **Polling** — `GET /ada/query/{query_id}` on an interval until `state` is
+     `done` or `error`.
+
+Request payload (`POST /ada/query`):
+
+```json
+{
+  "engine_id": "agent",
+  "user_query": "...",
+  "keywords": [],
+  "repo_names": ["owner/repo"],
+  "additional_context": "",
+  "query_id": "<uuid>",
+  "use_notes": false,
+  "attached_context": [],
+  "generate_summary": true
+}
+```
+
+Engine mapping: `fast` → `multihop_faster`, `deep` → `agent`, `codemap` → `codemap`.
+
+WebSocket event types observed on the stream: `snapshot`, `file_contents`,
+`stats`, `chunk`, `reference`, `summary_chunk`, `summary_done`, `done`. The
+stream carries the complete answer, so no follow-up `GET` is needed after
+streaming — `parse_response` assembles the `Answer` directly from the events.
+
+Management endpoints:
+
+| Method | Path | Used by |
+|--------|------|---------|
+| `GET` | `/ada/list_public_indexes?search_repo=` | `list` |
+| `GET` | `/ada/public_repo_indexing_status?repo_name=` | `status` |
+| `POST` | `/ada/warm_public_repo?repo_name=` | `warm` |
+| `GET` | `/ada/query/{query_id}` | `get` |
+
+## Error handling and exit codes
+
+Exceptions are classified into a small taxonomy and mapped to an exit code:
+
+| Error kind | Meaning | Exit code |
+|-----------|---------|-----------|
+| success | — | `0` |
+| `not_indexed` | repo is not indexed on DeepWiki | `2` |
+| `connection` | could not connect to the server | `3` |
+| `tool` / `error` / `invalid_repo` / `invalid_input` / `page_not_found` / `unexpected` | anything else | `1` |
+
+`ConnectionError` (transport-level failure) and `ToolError` (a `{"detail": …}`
+or tool error surfaced from the server) are the two core exception types. HTTP
+error bodies are surfaced via FastAPI's `detail` field so the CLI can classify
+"not indexed" vs. a generic tool error.
+
+With `--json`, errors go to **stderr** as a single line:
+
+```json
+{"error": "Could not connect to DeepWiki server...", "kind": "connection"}
+```
+
+## Streaming, retry, and fallback
+
+This applies to the **reverse** backend only.
+
+**Single-shot `--stream`** streams chunks over the WebSocket to stdout, then
+prints the summary/sources tail.
+
+**Retry.** Both single-shot `ask` and the interactive REPL retry transient
+failures — `ConnectionError` or a `ToolError` containing `HTTP 5` — with
+**jittered exponential backoff**: delay = `1.0s × 2^attempt + random(0 … 0.5s)`.
+The default is **4 attempts**, overridable with `DEEPWIKI_REPL_RETRIES`. Retries
+happen only while **nothing has streamed yet** — once a partial answer has
+reached the terminal, a dropped connection is reported instead of re-streaming
+garbled text.
+
+**Interactive reverse REPL** adds threading and poll fallback on top:
+
+1. Each follow-up question reuses the previous `query_id`, so the server keeps
+   one conversation thread (`/new` starts a fresh thread).
+2. On the **last** failed streaming attempt, the client **falls back to
+   polling** the already-submitted query over `GET /ada/query/{query_id}`
+   (`DevinClient.poll_answer`). Because the `POST` already succeeded, the query
+   exists server-side; polling just waits on it over a different transport. That
+   one question loses word-by-word streaming but still returns the full answer.
+
+Why this matters: the reverse endpoint is unofficial and occasionally refuses
+the WebSocket handshake (a millisecond-fast connection reset, not a slow
+timeout). Retry with backoff absorbs one-off blips; the poll fallback recovers
+from persistent WS refusals.
+
+## Repo formats
+
+`REPO` accepts any of:
+
+- `owner/repo`
+- `github.com/owner/repo`
+- `www.github.com/owner/repo`
+- `https://github.com/owner/repo` (optionally with `/tree/main` or `.git`)
+
+Everything is normalized to `owner/repo`.
+
+## JSON output
+
+Main commands emit an envelope with `repo` and `command`:
+
+```json
+{
+  "repo": "facebook/react",
+  "command": "ask",
+  "question": "What is Fiber?",
+  "answer": "...",
+  "truncated": false
+}
+```
+
+`ask` additionally includes `summary`, `references`, `sources`, `stats`, and
+`query_id` when the reverse backend provides them. Management commands
+(`list` / `status` / `warm` / `get`) omit `repo` and use `command` + fields
+only. Errors go to stderr as `{"error": ..., "kind": ...}`.
+
+## Saving (`--save`)
+
+- Bare `--save` auto-names the file `repowiki-<owner>-<repo>_<timestamp>.md` in
+  the current directory.
+- `--save PATH` writes to (and appends to) the given path, creating parent
+  directories.
+- In interactive mode all answers in the session append to one file; single-shot
+  answers append when the file already exists.
+- Combine with `--json` to keep stdout as JSON while writing Markdown to the file.
+
+## Mermaid
+
+`--mode codemap` returns a codemap (a `{"traces": [...]}` JSON blob). `--mermaid`
+renders it as a `flowchart TB` with per-trace subgraphs and color styling. Paste
+the output into mermaid.live, GitHub, or VS Code to view it. If the answer is
+not a codemap, `--mermaid` warns and prints the plain text.
+
+## Environment variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `DEEPWIKI_MCP_URL` | MCP endpoint | `https://mcp.deepwiki.com/mcp` |
+| `DEEPWIKI_API_URL` | reverse backend endpoint | `https://api.devin.ai` |
+| `DEEPWIKI_REPL_RETRIES` | reverse REPL retry attempts | `4` |
+| `DEEPWIKI_TIMEOUT` | reverse answer timeout in seconds | `120` (`300` for `--mode deep`) |
+| `REPOWIKI_MOCK_TEXT` | mock MCP result (tests) | — |
+| `REPOWIKI_DEVIN_MOCK` | mock reverse answer (tests) | — |
+
+## Usage recipes
+
+The combinations below are grouped by intent. All assume `facebook/react` as the
+repo unless noted.
+
+**Read documentation (MCP)**
 
 ```bash
 repowiki-cli structure facebook/react
 repowiki-cli contents vercel/next.js
 repowiki-cli contents vercel/next.js --page "Getting Started"   # one page only
-repowiki-cli contents vercel/next.js --rich                     # render Markdown
-repowiki-cli ask facebook/react "What is Fiber?"
-repowiki-cli ask facebook/react "What is Fiber?" --rich
-repowiki-cli ask facebook/react "What is Fiber?" --save            # auto-named file
-repowiki-cli ask facebook/react "What is Fiber?" --save notes/answers.md
-repowiki-cli ask facebook/react "What is Fiber?" --json             # JSON output
-repowiki-cli ask facebook/react          # interactive REPL
-
-# management commands (reverse backend only)
-repowiki-cli list react                   # search indexed repos
-repowiki-cli status facebook/react        # indexing status
-repowiki-cli warm facebook/react          # pre-warm the docs cache
-repowiki-cli get <query-id>               # retrieve a past answer by id
+repowiki-cli contents vercel/next.js --rich                      # rendered
 ```
 
-`structure` prints the documentation table of contents; `contents` prints the
-full documentation (may be large); `ask` answers a question (single-shot when a
-question is passed, interactive REPL otherwise — type `/exit` to quit).
-
-Management commands (`list` / `status` / `warm` / `get`) query the reverse
-backend's index-administration endpoints: `list` searches the public index,
-`status` reports a repo's indexing state (`unknown` when not indexed — a normal
-result, exit 0), `warm` pre-warms a repo's docs cache, and `get` replays a past
-answer by query id. All four accept `--json`.
-
-Reverse backend (`api.devin.ai`) — richer than MCP; enabled by any of these
-flags on `ask`:
+**Ask questions (MCP)**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep      # fast|deep|codemap
-repowiki-cli ask facebook/react "Follow-up?" --id <query-id>      # continue a thread
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep --sources
-repowiki-cli ask facebook/react "Show data flow" --mode codemap --mermaid
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep --stream
-repowiki-cli ask facebook/react --mode deep                       # interactive, auto-threads
-repowiki-cli ask facebook/react "What is Fiber?" --context "answer in Chinese"
-repowiki-cli ask facebook/react "What is Fiber?" --no-summary
-repowiki-cli ask facebook/react "diff?" --repo remix-run/react-router --repo TanStack/router
+repowiki-cli ask facebook/react "What is Fiber?"
+repowiki-cli ask facebook/react "What is Fiber?" --rich
+repowiki-cli ask facebook/react                                  # interactive
 ```
 
-- `--mode fast|deep|codemap` — engine selection (fast=multihop_faster, deep=agent, codemap=codemap).
-- `--id <query-id>` — reuse a previous query id to continue the conversation thread.
-- `--sources` — append line-numbered source slices for each citation.
-- `--context <text>` — pass additional context alongside the question.
-- `--no-summary` — skip summary generation.
-- `--repo <repo>` — repeatable; query additional repos. One question is asked
-  against all repos (the positional `repo` plus every `--repo`) at once.
-- `--mermaid` — render a `codemap` answer as a Mermaid `flowchart TB` instead of
-  the raw codemap JSON. Meant for `--mode codemap`; if the answer is not a
-  codemap it warns and falls back to plain text. Paste the output into
-  mermaid.live, GitHub, or VS Code to view the diagram.
-- `--stream` — stream answer text word-by-word as it arrives over a WebSocket
-  instead of waiting for the full answer, then append the summary and sources.
-  Has no effect with `--json`.
+**Machine-readable output**
 
-The reverse backend also returns source files, line-range citations, and a
-separate summary that MCP drops. `--json` carries all of these
-(`summary`, `references`, `sources`, `stats`, `query_id`). In interactive
-reverse mode, each question continues the previous thread automatically;
-`/new` starts a fresh one.
+```bash
+repowiki-cli structure facebook/react --json
+repowiki-cli contents vercel/next.js --json
+repowiki-cli ask facebook/react "What is Fiber?" --json
+repowiki-cli ask facebook/react "What is Fiber?" --json --save out.md   # JSON + Markdown file
+```
 
-### Options
+**Save answers to files**
 
-- `contents --page <title>` — print only the page with that title
-  (case-insensitive exact match). Page titles are long and descriptive (e.g.
-  "Fiber Work Loop and Scheduling"); if no page matches, the available titles
-  are listed so you can copy the exact one. The `# Page:` delimiter is dropped,
-  so the selected page shows a single heading.
-- `--rich` (on `contents` and `ask`) — render the Markdown with color and
-  formatting via [rich](https://github.com/Textualize/rich), so headings, lists
-  and code blocks are easier to read. Default output is plain Markdown.
-- `--json` (on `structure`, `contents`, `ask`, and the management commands
-  `list`/`status`/`warm`/`get`) — emit a machine-readable JSON envelope instead
-  of Markdown, e.g.
-  `{"repo": "facebook/react", "command": "ask", "question": "...", "answer": "...", "truncated": false}`.
-  Management envelopes omit `repo` (e.g.
-  `{"command": "list", "search": "...", "indices": [...], ...}`). Errors go to
-  stderr as `{"error": "...", "kind": "..."}`. `--json` is ignored in
-  interactive (`ask` without a question) mode; combine with `--save` to write
-  Markdown to a file while stdout stays JSON.
-- `--save [PATH]` (on `ask`) — save each answer to a Markdown file. Bare
-  `--save` auto-names the file as
-  `repowiki-<owner>-<repo>_<timestamp>.md` in the current directory; `--save
-  PATH` writes to (and appends to) the given path. In interactive mode all
-  answers in the session append to one file; single-shot answers append when
-  the file already exists.
+```bash
+repowiki-cli ask facebook/react "What is Fiber?" --save            # auto-named
+repowiki-cli ask facebook/react "What is Fiber?" --save notes/answers.md
+```
 
-Repos may be given as `owner/repo`, `github.com/owner/repo`, or a full GitHub
-URL. The MCP endpoint defaults to `https://mcp.deepwiki.com/mcp` and can be
-overridden with `DEEPWIKI_MCP_URL`.
+**Reverse backend — engine and depth**
 
-Exit codes: `0` success; `2` the repository is not indexed on DeepWiki; `3`
-could not connect to the DeepWiki server; `1` any other error (bad repo
-reference, tool error, and so on).
+```bash
+repowiki-cli ask facebook/react "What is Fiber?" --mode deep
+repowiki-cli ask facebook/react "Quick facts?" --mode fast
+repowiki-cli ask facebook/react "Show the data flow" --mode codemap --mermaid
+```
 
-Connection handling: the interactive REPL keeps one MCP connection open for the
-whole session instead of reconnecting per question. A connection failure — the
-REPL's initial handshake or a one-shot command's connect — is retried once
-before giving up, and a drop mid-session is recovered by reopening. This keeps
-a transient network blip from surfacing as a hard error.
+**Reverse backend — sources and summary**
 
-Reverse-backend robustness: the interactive reverse REPL retries transient
-failures (connection errors and HTTP 5xx) with jittered exponential backoff —
-default 4 attempts, base 1s with ±0.5s jitter, configurable via
-`DEEPWIKI_REPL_RETRIES`. If streaming still fails on the last attempt, it falls
-back to polling the already-submitted query over HTTP (losing word-by-word
-streaming for that one question) before giving up.
+```bash
+repowiki-cli ask facebook/react "What is Fiber?" --mode deep --sources
+repowiki-cli ask facebook/react "What is Fiber?" --mode deep --no-summary
+```
+
+**Reverse backend — streaming and context**
+
+```bash
+repowiki-cli ask facebook/react "What is Fiber?" --mode deep --stream
+repowiki-cli ask facebook/react "What is Fiber?" --mode deep --context "answer in Chinese"
+```
+
+**Reverse backend — threads and multi-repo**
+
+```bash
+repowiki-cli ask facebook/react "Follow-up?" --id <query-id>      # continue a thread
+repowiki-cli ask facebook/react "diff?" --repo remix-run/react-router --repo TanStack/router
+repowiki-cli ask facebook/react --mode deep                        # interactive, auto-threads
+```
+
+**Management**
+
+```bash
+repowiki-cli list react
+repowiki-cli status facebook/react
+repowiki-cli warm facebook/react
+repowiki-cli get <query-id>
+repowiki-cli get <query-id> --sources
+repowiki-cli get <query-id> --mermaid
+```
+
+**Scripting with exit codes**
+
+```bash
+repowiki-cli ask some/repo "q?" --json > out.json
+case $? in
+  0) ;;                       # success
+  2) echo "not indexed" ;;
+  3) echo "connection error" ;;
+  *) echo "other error" ;;
+esac
+```
 
 ## DeepWiki MCP server
 
-This CLI talks to the official [DeepWiki MCP
-server](https://docs.devin.ai/work-with-devin/deepwiki-mcp), which is free and
-requires no authentication for public repositories.
+The official [DeepWiki MCP server](https://docs.devin.ai/work-with-devin/deepwiki-mcp)
+is free and requires no auth for public repos. It exposes two wire protocols:
+Streamable HTTP (`/mcp`, recommended) and SSE (`/sse`, deprecated). `repowiki-cli`
+speaks Streamable HTTP.
 
-The server exposes two wire protocols:
-
-- **Streamable HTTP** — `https://mcp.deepwiki.com/mcp` (recommended)
-- **SSE** — `https://mcp.deepwiki.com/sse` (legacy, being deprecated)
-
-`repowiki-cli` speaks Streamable HTTP, so `DEEPWIKI_MCP_URL` should point at the
-`/mcp` endpoint (the default).
-
-### Use the same server from an AI app
-
-The MCP server can also be added directly to MCP-capable clients. For Claude
-Code:
+To add it to Claude Code:
 
 ```bash
 claude mcp add -s user -t http deepwiki https://mcp.deepwiki.com/mcp
 ```
 
-### Private repositories
-
-`repowiki-cli` reaches public repositories only. For private repos, use the
+Private repositories are out of scope for `repowiki-cli`; use the
 [Devin MCP server](https://docs.devin.ai/work-with-devin/devin-mcp) with a Devin
-API key. The complete documentation index lives at
+API key. The full documentation index lives at
 <https://docs.devin.ai/llms.txt>.
+
+## Related tools
+
+These are reference/alternative CLIs for the same space — worth consulting
+before re-implementing anything:
+
+- [Zread CLI](https://github.com/ZreadAI/zread_cli) — generates wiki docs
+  locally from your repo via an LLM (config `~/.zread/config.yaml`).
+- [readmeX CLI](https://github.com/aibox22/readmeX) — official CLI.
+- [deepwiki-open](https://github.com/AsyncFuncAI/deepwiki-open) — open-source
+  DeepWiki CLI.
+
+If the goal is *generating* a wiki from your own API rather than querying the
+public DeepWiki index, the official CLIs above already solve it — don't
+reinvent the wheel.
 
 ## Development
 
@@ -167,14 +484,3 @@ API key. The complete documentation index lives at
 uv sync
 uv run pytest
 ```
-
-
-# 以上只是复刻 wiki 查询、拉取、回复功能
-
-如果是使用自己的api接入做wiki生成，不建议自己再做轮子，因为官方有cli工具用于生成
-
-* 官方zread cli：https://github.com/ZreadAI/zread_cli
-* 官方readmex cli：https://github.com/aibox22/readmeX
-* 开源deepwiki cli：https://github.com/AsyncFuncAI/deepwiki-open
-
-https://docs.devin.ai/work-with-devin/deepwiki-mcp
