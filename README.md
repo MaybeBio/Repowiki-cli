@@ -30,11 +30,23 @@ repowiki-cli ask facebook/react "What is Fiber?" --save            # auto-named 
 repowiki-cli ask facebook/react "What is Fiber?" --save notes/answers.md
 repowiki-cli ask facebook/react "What is Fiber?" --json             # JSON output
 repowiki-cli ask facebook/react          # interactive REPL
+
+# management commands (reverse backend only)
+repowiki-cli list react                   # search indexed repos
+repowiki-cli status facebook/react        # indexing status
+repowiki-cli warm facebook/react          # pre-warm the docs cache
+repowiki-cli get <query-id>               # retrieve a past answer by id
 ```
 
 `structure` prints the documentation table of contents; `contents` prints the
 full documentation (may be large); `ask` answers a question (single-shot when a
 question is passed, interactive REPL otherwise — type `/exit` to quit).
+
+Management commands (`list` / `status` / `warm` / `get`) query the reverse
+backend's index-administration endpoints: `list` searches the public index,
+`status` reports a repo's indexing state (`unknown` when not indexed — a normal
+result, exit 0), `warm` pre-warms a repo's docs cache, and `get` replays a past
+answer by query id. All four accept `--json`.
 
 Reverse backend (`api.devin.ai`) — richer than MCP; enabled by any of these
 flags on `ask`:
@@ -44,11 +56,18 @@ repowiki-cli ask facebook/react "What is Fiber?" --mode deep      # fast|deep|co
 repowiki-cli ask facebook/react "Follow-up?" --id <query-id>      # continue a thread
 repowiki-cli ask facebook/react "What is Fiber?" --mode deep --sources
 repowiki-cli ask facebook/react --mode deep                       # interactive, auto-threads
+repowiki-cli ask facebook/react "What is Fiber?" --context "answer in Chinese"
+repowiki-cli ask facebook/react "What is Fiber?" --no-summary
+repowiki-cli ask facebook/react "diff?" --repo remix-run/react-router --repo TanStack/router
 ```
 
 - `--mode fast|deep|codemap` — engine selection (fast=multihop_faster, deep=agent, codemap=codemap).
 - `--id <query-id>` — reuse a previous query id to continue the conversation thread.
 - `--sources` — append line-numbered source slices for each citation.
+- `--context <text>` — pass additional context alongside the question.
+- `--no-summary` — skip summary generation.
+- `--repo <repo>` — repeatable; query additional repos. One question is asked
+  against all repos (the positional `repo` plus every `--repo`) at once.
 
 The reverse backend also returns source files, line-range citations, and a
 separate summary that MCP drops. `--json` carries all of these
@@ -66,12 +85,15 @@ reverse mode, each question continues the previous thread automatically;
 - `--rich` (on `contents` and `ask`) — render the Markdown with color and
   formatting via [rich](https://github.com/Textualize/rich), so headings, lists
   and code blocks are easier to read. Default output is plain Markdown.
-- `--json` (on `structure`, `contents`, and `ask`) — emit a machine-readable
-  JSON envelope instead of Markdown, e.g.
+- `--json` (on `structure`, `contents`, `ask`, and the management commands
+  `list`/`status`/`warm`/`get`) — emit a machine-readable JSON envelope instead
+  of Markdown, e.g.
   `{"repo": "facebook/react", "command": "ask", "question": "...", "answer": "...", "truncated": false}`.
-  Errors go to stderr as `{"error": "...", "kind": "..."}`. `--json` is ignored
-  in interactive (`ask` without a question) mode; combine with `--save` to
-  write Markdown to a file while stdout stays JSON.
+  Management envelopes omit `repo` (e.g.
+  `{"command": "list", "search": "...", "indices": [...], ...}`). Errors go to
+  stderr as `{"error": "...", "kind": "..."}`. `--json` is ignored in
+  interactive (`ask` without a question) mode; combine with `--save` to write
+  Markdown to a file while stdout stays JSON.
 - `--save [PATH]` (on `ask`) — save each answer to a Markdown file. Bare
   `--save` auto-names the file as
   `repowiki-<owner>-<repo>_<timestamp>.md` in the current directory; `--save
