@@ -227,3 +227,62 @@ async def test_get_json_passes_params(monkeypatch):
     assert data == {"ok": True}
     assert captured["path"] == "/ada/list_public_indexes"
     assert captured["params"] == {"search_repo": "react"}
+
+
+class _MgmtClient:
+    def __init__(self, responses, method=None):
+        self._responses = list(responses)
+        self._method = method
+        self.calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return None
+
+    async def get(self, path, params=None):
+        self.calls.append(("GET", path, params))
+        return _Resp(self._responses.pop(0))
+
+    async def post(self, path, params=None, json=None):
+        self.calls.append(("POST", path, params))
+        return _Resp(self._responses.pop(0))
+
+
+@pytest.mark.asyncio
+async def test_list_public_indexes(monkeypatch):
+    fake = _MgmtClient([{"indices": [{"repo_name": "a/b"}], "needs_reindex": [], "pending_repos": []}])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    result = await devin_mod.DevinClient().list_public_indexes("react")
+    assert result["indices"][0]["repo_name"] == "a/b"
+    assert fake.calls == [("GET", "/ada/list_public_indexes", {"search_repo": "react"})]
+
+
+@pytest.mark.asyncio
+async def test_public_repo_indexing_status(monkeypatch):
+    fake = _MgmtClient([{"status": "completed"}])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    result = await devin_mod.DevinClient().public_repo_indexing_status("a/b")
+    assert result == {"status": "completed"}
+    assert fake.calls == [("GET", "/ada/public_repo_indexing_status", {"repo_name": "a/b"})]
+
+
+@pytest.mark.asyncio
+async def test_warm_public_repo(monkeypatch):
+    fake = _MgmtClient([{"status": "OK"}])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    result = await devin_mod.DevinClient().warm_public_repo("a/b")
+    assert result == {"status": "OK"}
+    assert fake.calls == [("POST", "/ada/warm_public_repo", {"repo_name": "a/b"})]
+
+
+@pytest.mark.asyncio
+async def test_get_query_parses_answer(monkeypatch):
+    q = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}
+    fake = _MgmtClient([{"queries": [q]}])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    answer = await devin_mod.DevinClient().get_query("qid-1")
+    assert answer.body == "hi"
+    assert answer.query_id == "qid-1"
+    assert fake.calls == [("GET", "/ada/query/qid-1", None)]

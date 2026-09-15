@@ -151,3 +151,22 @@ class DevinClient:
         if query.get("error"):
             raise ToolError(str(query["error"]))
         return parse_response(query, qid)
+
+    async def list_public_indexes(self, search: str) -> dict:
+        return await self._get_json("/ada/list_public_indexes", params={"search_repo": search})
+
+    async def public_repo_indexing_status(self, repo: str) -> dict:
+        return await self._get_json("/ada/public_repo_indexing_status", params={"repo_name": repo})
+
+    async def warm_public_repo(self, repo: str) -> dict:
+        return await self._post_json("/ada/warm_public_repo", params={"repo_name": repo})
+
+    async def get_query(self, query_id: str) -> Answer:
+        data = await self._get_json(f"/ada/query/{query_id}")
+        queries = data.get("queries")
+        if not queries:
+            raise ToolError("Devin API returned no query results")
+        query = queries[-1]
+        if query.get("error"):
+            raise ToolError(str(query["error"]))
+        return parse_response(query, query_id)
