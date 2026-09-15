@@ -337,6 +337,30 @@ async def test_get_query_error_field(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_poll_answer_waits_then_parses(monkeypatch):
+    processing = {"state": "processing", "error": None, "response": []}
+    done = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}
+    fake = _MgmtClient([{"queries": [processing]}, {"queries": [done]}])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    answer = await devin_mod.DevinClient().poll_answer("qid-1", poll_interval=0)
+    assert answer.body == "hi"
+    assert answer.query_id == "qid-1"
+    assert fake.calls == [
+        ("GET", "/ada/query/qid-1", None),
+        ("GET", "/ada/query/qid-1", None),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_poll_answer_error_field(monkeypatch):
+    q = {"state": "error", "error": "boom", "response": []}
+    fake = _MgmtClient([{"queries": [q]}])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    with pytest.raises(ToolError, match="boom"):
+        await devin_mod.DevinClient().poll_answer("qid-1", poll_interval=0)
+
+
+@pytest.mark.asyncio
 async def test_devin_ask_reuses_one_connection(monkeypatch):
     processing = {"state": "processing", "error": None, "response": []}
     done = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}

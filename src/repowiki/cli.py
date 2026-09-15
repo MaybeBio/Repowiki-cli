@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import random
 import sys
 from dataclasses import asdict
 from typing import NoReturn, Optional
+from uuid import uuid4
 
 import typer
 from typer.core import TyperCommand
@@ -296,8 +298,20 @@ async def _repl(resolved: str, rich: bool, save_path: str | None) -> None:
             typer.echo()
 
 
-_REPL_MAX_ATTEMPTS = 3
 _REPL_RETRY_BASE = 1.0
+_REPL_RETRY_JITTER = 0.5
+_REPL_DEFAULT_ATTEMPTS = 4
+
+
+def _repl_attempts() -> int:
+    raw = os.environ.get("DEEPWIKI_REPL_RETRIES", "")
+    if raw.isdigit() and int(raw) > 0:
+        return int(raw)
+    return _REPL_DEFAULT_ATTEMPTS
+
+
+def _retry_delay(attempt: int) -> float:
+    return _REPL_RETRY_BASE * (2 ** attempt) + random.uniform(0, _REPL_RETRY_JITTER)
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -319,14 +333,17 @@ async def _ask_repl(
     context: str,
     generate_summary: bool,
 ) -> Answer:
-    """Ask with bounded backoff retry on transient failures.
+    """Ask with jittered backoff retry, falling back to polling at the end.
 
     Retries only while nothing has streamed yet — once a partial answer has
     reached the terminal, a dropped connection is reported rather than
-    re-streaming garbled text.
+    re-streaming garbled text. After the last failed streaming attempt, the
+    already-submitted query is polled over HTTP instead of re-streaming.
     """
+    qid = query_id or str(uuid4())
     emitted = 0
-    for attempt in range(_REPL_MAX_ATTEMPTS):
+    attempts = _repl_attempts()
+    for attempt in range(attempts):
         def on_chunk(text: str) -> None:
             nonlocal emitted
             emitted += 1
@@ -337,17 +354,27 @@ async def _ask_repl(
                 repos,
                 question,
                 mode=mode,
-                query_id=query_id,
+                query_id=qid,
                 context=context,
                 generate_summary=generate_summary,
                 on_chunk=on_chunk,
             )
         except Exception as exc:
-            if not _is_retryable(exc) or emitted or attempt == _REPL_MAX_ATTEMPTS - 1:
+            if not _is_retryable(exc) or emitted:
                 raise
-            delay = _REPL_RETRY_BASE * (2 ** attempt)
+            if attempt == attempts - 1:
+                typer.secho(
+                    "Streaming failed; polling for the answer…",
+                    fg=typer.colors.YELLOW,
+                    err=True,
+                )
+                answer = await devin.poll_answer(qid)
+                if answer.body:
+                    _stream_chunk(answer.body)
+                return answer
+            delay = _retry_delay(attempt)
             typer.secho(
-                f"Transient error ({_error_message(exc)}); retrying in {delay:.0f}s…",
+                f"Transient error ({_error_message(exc)}); retrying in {delay:.1f}s…",
                 fg=typer.colors.YELLOW,
                 err=True,
             )

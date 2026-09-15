@@ -163,21 +163,9 @@ class DevinClient:
             if on_chunk is not None:
                 events = await self._stream_chunks(qid, on_chunk, timeout=timeout)
                 return parse_response({"response": events}, qid)
-            deadline = time.monotonic() + timeout
-            while True:
-                await asyncio.sleep(poll_interval)
-                if time.monotonic() > deadline:
-                    raise ToolError("timed out waiting for answer")
-                data = await self._get_json(f"/ada/query/{qid}", client=client)
-                queries = data.get("queries")
-                if not queries:
-                    raise ToolError("Devin API returned no query results")
-                query = queries[-1]
-                if query.get("state") in ("done", "error"):
-                    break
-        if query.get("error"):
-            raise ToolError(str(query["error"]))
-        return parse_response(query, qid)
+            return await self._poll_query(
+                qid, client=client, poll_interval=poll_interval, timeout=timeout
+            )
 
     async def _stream_chunks(
         self, qid: str, on_chunk: Callable[[str], None], *, timeout: float
@@ -219,6 +207,47 @@ class DevinClient:
         except (OSError, WebSocketException) as exc:
             raise ConnectionError(f"WebSocket connection failed: {exc}") from exc
         return events
+
+    async def poll_answer(
+        self,
+        query_id: str,
+        *,
+        poll_interval: float = 2.0,
+        timeout: float = 120.0,
+    ) -> Answer:
+        """Poll an already-submitted query by id until it completes.
+
+        Fallback for when WebSocket streaming fails: the query was already
+        POSTed, so we wait on the polling endpoint instead of re-submitting.
+        """
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
+            return await self._poll_query(
+                query_id, client=client, poll_interval=poll_interval, timeout=timeout
+            )
+
+    async def _poll_query(
+        self,
+        qid: str,
+        *,
+        client: httpx.AsyncClient,
+        poll_interval: float,
+        timeout: float,
+    ) -> Answer:
+        deadline = time.monotonic() + timeout
+        while True:
+            await asyncio.sleep(poll_interval)
+            if time.monotonic() > deadline:
+                raise ToolError("timed out waiting for answer")
+            data = await self._get_json(f"/ada/query/{qid}", client=client)
+            queries = data.get("queries")
+            if not queries:
+                raise ToolError("Devin API returned no query results")
+            query = queries[-1]
+            if query.get("state") in ("done", "error"):
+                break
+        if query.get("error"):
+            raise ToolError(str(query["error"]))
+        return parse_response(query, qid)
 
     async def list_public_indexes(self, search: str) -> dict:
         return await self._get_json("/ada/list_public_indexes", params={"search_repo": search})

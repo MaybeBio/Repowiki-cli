@@ -523,7 +523,8 @@ def test_ask_repl_devin_auto_threads(monkeypatch):
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
     result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
     assert result.exit_code == 0
-    assert seen_qids == [None, "qid-first"]
+    assert seen_qids[0] is not None
+    assert seen_qids[1] == "qid-first"
     assert "answer to first" in result.output
     assert "answer to second" in result.output
 
@@ -541,7 +542,8 @@ def test_ask_repl_devin_new_resets_thread(monkeypatch):
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
     result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
     assert result.exit_code == 0
-    assert seen_qids == [None, None]
+    assert seen_qids[0] is not None and seen_qids[1] is not None
+    assert seen_qids[0] != seen_qids[1]
 
 
 def test_ask_repl_devin_streams_chunks_then_summary(monkeypatch):
@@ -634,6 +636,49 @@ def test_ask_repl_no_retry_on_non_transient(monkeypatch):
     assert result.exit_code == 0
     assert calls == ["first"]
     assert "unknown mode" in result.output
+
+
+def test_ask_repl_falls_back_to_poll(monkeypatch):
+    inputs = iter(["first", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    ask_qids = []
+    poll_qids = []
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+            ask_qids.append(query_id)
+            raise ConnectionError("refused")
+
+        async def poll_answer(self, query_id, *, poll_interval=2.0, timeout=120.0):
+            poll_qids.append(query_id)
+            return Answer(body="polled answer", query_id=query_id)
+
+    monkeypatch.setattr("asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert len(ask_qids) > 1
+    assert ask_qids == [ask_qids[0]] * len(ask_qids)  # same thread qid every retry
+    assert poll_qids == [ask_qids[0]]
+    assert "polled answer" in result.stdout
+
+
+def test_ask_repl_poll_fallback_failure(monkeypatch):
+    inputs = iter(["first", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+            raise ConnectionError("refused")
+
+        async def poll_answer(self, query_id, *, poll_interval=2.0, timeout=120.0):
+            raise ConnectionError("still refused")
+
+    monkeypatch.setattr("asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert "Could not connect" in result.output
 
 
 def test_ask_save_repl_appends(monkeypatch, tmp_path):

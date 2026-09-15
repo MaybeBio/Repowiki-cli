@@ -124,6 +124,13 @@ REPL's initial handshake or a one-shot command's connect — is retried once
 before giving up, and a drop mid-session is recovered by reopening. This keeps
 a transient network blip from surfacing as a hard error.
 
+Reverse-backend robustness: the interactive reverse REPL retries transient
+failures (connection errors and HTTP 5xx) with jittered exponential backoff —
+default 4 attempts, base 1s with ±0.5s jitter, configurable via
+`DEEPWIKI_REPL_RETRIES`. If streaming still fails on the last attempt, it falls
+back to polling the already-submitted query over HTTP (losing word-by-word
+streaming for that one question) before giving up.
+
 ## DeepWiki MCP server
 
 This CLI talks to the official [DeepWiki MCP
