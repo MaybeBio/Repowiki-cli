@@ -318,6 +318,23 @@ async def test_get_query_parses_answer(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_query_empty_queries(monkeypatch):
+    fake = _MgmtClient([{"queries": []}])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    with pytest.raises(ToolError, match="no query results"):
+        await devin_mod.DevinClient().get_query("qid-1")
+
+
+@pytest.mark.asyncio
+async def test_get_query_error_field(monkeypatch):
+    q = {"state": "error", "error": "boom", "response": []}
+    fake = _MgmtClient([{"queries": [q]}])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    with pytest.raises(ToolError, match="boom"):
+        await devin_mod.DevinClient().get_query("qid-1")
+
+
+@pytest.mark.asyncio
 async def test_devin_ask_reuses_one_connection(monkeypatch):
     processing = {"state": "processing", "error": None, "response": []}
     done = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}

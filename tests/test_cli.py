@@ -331,6 +331,36 @@ def test_ask_context_and_no_summary_route_to_devin(monkeypatch):
     assert captured == {"context": "in Chinese", "generate_summary": False}
 
 
+def test_ask_context_alone_routes_to_devin(monkeypatch):
+    captured = {}
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+            captured.update(context=context, generate_summary=generate_summary)
+            return Answer(body="devin answer")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--context", "ctx"])
+    assert result.exit_code == 0
+    assert captured == {"context": "ctx", "generate_summary": True}
+    assert "devin answer" in result.output
+
+
+def test_ask_no_summary_alone_routes_to_devin(monkeypatch):
+    captured = {}
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+            captured.update(context=context, generate_summary=generate_summary)
+            return Answer(body="devin answer")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--no-summary"])
+    assert result.exit_code == 0
+    assert captured == {"context": "", "generate_summary": False}
+    assert "devin answer" in result.output
+
+
 def test_ask_no_flags_still_mcp(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "mcp answer")
     result = runner.invoke(app, ["ask", "facebook/react", "q?"])
