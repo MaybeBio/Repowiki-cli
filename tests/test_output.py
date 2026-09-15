@@ -2,9 +2,11 @@ import io
 
 import pytest
 
+from repowiki.model import Answer, Reference, SourceFile
 from repowiki.output import (
     _prepare_markdown,
     filter_page,
+    format_answer,
     format_header,
     format_result,
     list_page_titles,
@@ -72,3 +74,45 @@ def test_status_is_silent_when_not_a_tty(monkeypatch):
         ran.append(True)
     assert ran == [True]
     assert buf.getvalue() == ""
+
+
+def test_format_answer_body_only():
+    assert format_answer(Answer(body="  hi  ")) == "hi"
+
+
+def test_format_answer_fills_inline_citations_when_counts_match():
+    a = Answer(
+        body="Fiber tracks effects .",
+        references=[Reference("f.py", 1, 2)],
+    )
+    out = format_answer(a)
+    assert "effects [1]." in out
+    assert "## Sources" in out
+    assert "1. f.py:1-2" in out
+
+
+def test_format_answer_skips_fill_when_counts_mismatch():
+    a = Answer(
+        body="effects . and more .",
+        references=[Reference("f.py", 1, 2)],  # 2 锚点 1 引用
+    )
+    out = format_answer(a)
+    assert "effects ." in out  # 不填充
+    assert "## Sources" in out
+
+
+def test_format_answer_includes_summary():
+    a = Answer(body="body", summary="a summary")
+    out = format_answer(a)
+    assert "## Summary" in out and "a summary" in out
+
+
+def test_format_answer_sources_flag_adds_slices():
+    a = Answer(
+        body="body .",
+        references=[Reference("Repo a/b: f.py", 1, 2)],
+        sources=[SourceFile("a/b", "f.py", "l1\nl2\nl3")],
+    )
+    out = format_answer(a, show_sources=True)
+    assert "f.py:1-2" in out
+    assert "l1" in out and "l2" in out
