@@ -383,6 +383,14 @@ repowiki-cli ask facebook/react "What is Fiber?" --mode deep --stream
 repowiki-cli ask facebook/react "What is Fiber?" --mode deep --context "answer in Chinese"
 ```
 
+**逆向后端 — 超时**
+
+```bash
+repowiki-cli ask facebook/react "Deep dive?" --mode deep --timeout 600   # deep 回答放宽到 10 分钟
+repowiki-cli ask facebook/react "Quick facts?" --mode fast --timeout 30
+DEEPWIKI_TIMEOUT=600 repowiki-cli ask facebook/react "Deep dive?" --mode deep   # 或用环境变量
+```
+
 **逆向后端 — 线程与多仓库**
 
 ```bash

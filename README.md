@@ -414,6 +414,14 @@ repowiki-cli ask facebook/react "What is Fiber?" --mode deep --stream
 repowiki-cli ask facebook/react "What is Fiber?" --mode deep --context "answer in Chinese"
 ```
 
+**Reverse backend — timeout**
+
+```bash
+repowiki-cli ask facebook/react "Deep dive?" --mode deep --timeout 600   # allow 10 min for deep answers
+repowiki-cli ask facebook/react "Quick facts?" --mode fast --timeout 30
+DEEPWIKI_TIMEOUT=600 repowiki-cli ask facebook/react "Deep dive?" --mode deep   # or via env var
+```
+
 **Reverse backend — threads and multi-repo**
 
 ```bash
