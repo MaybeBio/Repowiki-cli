@@ -18,6 +18,7 @@ from repowiki.client import (
     ToolError,
     run_async,
 )
+from repowiki.codemap import codemap_to_mermaid
 from repowiki.devin import DevinClient
 from repowiki.model import Answer
 from repowiki.output import (
@@ -397,6 +398,9 @@ def ask(
     extra_repos: Optional[list[str]] = typer.Option(
         None, "--repo", help="Additional repos to query (repeatable, reverse backend)",
     ),
+    mermaid: bool = typer.Option(
+        False, "--mermaid", help="Output a Mermaid diagram (codemap mode only)",
+    ),
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo, json)
@@ -419,6 +423,23 @@ def ask(
                                   context_value, generate_summary)
         except Exception as exc:
             _handle_exception(exc, json)
+        if mermaid:
+            mermaid_text = codemap_to_mermaid(answer.body)
+            if mermaid_text is not None:
+                if json:
+                    fields: dict[str, object] = {"question": question, "mermaid": mermaid_text}
+                    if answer.query_id:
+                        fields["query_id"] = answer.query_id
+                    typer.echo(format_json(resolved, "ask", **fields))
+                else:
+                    typer.echo(mermaid_text)
+                _append_save(save_path, resolved, question, mermaid_text)
+                return
+            typer.secho(
+                "Warning: --mermaid is set but the answer is not a codemap; showing as text.",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
         _emit_answer(resolved, question, answer, rich, json, sources)
         _append_save(save_path, resolved, question, answer.body)
         return
@@ -517,6 +538,9 @@ def get(
     rich: bool = typer.Option(False, "--rich", help="Render Markdown with rich"),
     sources: bool = typer.Option(False, "--sources", help="Show source-code slices"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+    mermaid: bool = typer.Option(
+        False, "--mermaid", help="Output a Mermaid diagram (codemap queries only)",
+    ),
 ) -> None:
     """Retrieve the result of a previous query by id."""
     client = DevinClient()
@@ -525,6 +549,22 @@ def get(
             answer = run_async(client.get_query(query_id))
     except Exception as exc:
         _handle_exception(exc, json)
+    if mermaid:
+        mermaid_text = codemap_to_mermaid(answer.body)
+        if mermaid_text is not None:
+            if json:
+                fields: dict[str, object] = {"mermaid": mermaid_text}
+                if answer.query_id:
+                    fields["query_id"] = answer.query_id
+                typer.echo(format_command_json("get", **fields))
+            else:
+                typer.echo(mermaid_text)
+            return
+        typer.secho(
+            "Warning: --mermaid is set but the answer is not a codemap; showing as text.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
     if json:
         typer.echo(format_command_json("get", **_answer_json_fields(answer)))
         return

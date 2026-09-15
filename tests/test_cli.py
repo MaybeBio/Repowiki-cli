@@ -7,6 +7,26 @@ from repowiki.model import Answer, Reference, SourceFile
 
 runner = CliRunner()
 
+CODEMAP = json.dumps({
+    "title": "t",
+    "traces": [{
+        "id": "1",
+        "title": "Trace One",
+        "description": "",
+        "locations": [{
+            "id": "a",
+            "title": "Loc A",
+            "path": "/x/f.py",
+            "lineNumber": 1,
+            "lineContent": "",
+            "description": "",
+        }],
+    }],
+    "description": "",
+    "metadata": {},
+    "workspaceInfo": {},
+})
+
 
 def test_structure_command_mock(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "1. Overview")
@@ -423,6 +443,43 @@ def test_ask_sources_renders_slices(monkeypatch):
     assert "l1" in result.output
 
 
+def test_ask_mermaid_outputs_mermaid(monkeypatch):
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+            return Answer(body=CODEMAP, query_id="q1")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "codemap", "--mermaid"])
+    assert result.exit_code == 0
+    assert "flowchart TB" in result.output
+    assert '"traces"' not in result.output
+
+
+def test_ask_mermaid_falls_back_when_not_codemap(monkeypatch):
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+            return Answer(body="plain prose")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "codemap", "--mermaid"])
+    assert result.exit_code == 0
+    assert "not a codemap" in result.output
+    assert "plain prose" in result.output
+
+
+def test_ask_mermaid_json(monkeypatch):
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+            return Answer(body=CODEMAP, query_id="q1")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "codemap", "--mermaid", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["mermaid"].startswith("flowchart TB")
+    assert data["query_id"] == "q1"
+
+
 def test_ask_repl_devin_auto_threads(monkeypatch):
     inputs = iter(["first", "second", "/exit"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
@@ -569,6 +626,17 @@ def test_get_command_json(monkeypatch):
     assert data["command"] == "get"
     assert data["query_id"] == "q1"
     assert data["answer"] == "past"
+
+
+def test_get_mermaid_outputs_mermaid(monkeypatch):
+    from repowiki.model import Answer
+    monkeypatch.setattr(
+        "repowiki.cli.DevinClient",
+        _fake_devin_class({"get_query": Answer(body=CODEMAP, query_id="q1")}),
+    )
+    result = runner.invoke(app, ["get", "q1", "--mermaid"])
+    assert result.exit_code == 0
+    assert "flowchart TB" in result.output
 
 
 def test_list_command_json_coerces_null_to_empty(monkeypatch):

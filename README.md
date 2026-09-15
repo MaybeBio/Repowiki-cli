@@ -55,6 +55,7 @@ flags on `ask`:
 repowiki-cli ask facebook/react "What is Fiber?" --mode deep      # fast|deep|codemap
 repowiki-cli ask facebook/react "Follow-up?" --id <query-id>      # continue a thread
 repowiki-cli ask facebook/react "What is Fiber?" --mode deep --sources
+repowiki-cli ask facebook/react "Show data flow" --mode codemap --mermaid
 repowiki-cli ask facebook/react --mode deep                       # interactive, auto-threads
 repowiki-cli ask facebook/react "What is Fiber?" --context "answer in Chinese"
 repowiki-cli ask facebook/react "What is Fiber?" --no-summary
@@ -68,6 +69,10 @@ repowiki-cli ask facebook/react "diff?" --repo remix-run/react-router --repo Tan
 - `--no-summary` — skip summary generation.
 - `--repo <repo>` — repeatable; query additional repos. One question is asked
   against all repos (the positional `repo` plus every `--repo`) at once.
+- `--mermaid` — render a `codemap` answer as a Mermaid `flowchart TB` instead of
+  the raw codemap JSON. Meant for `--mode codemap`; if the answer is not a
+  codemap it warns and falls back to plain text. Paste the output into
+  mermaid.live, GitHub, or VS Code to view the diagram.
 
 The reverse backend also returns source files, line-range citations, and a
 separate summary that MCP drops. `--json` carries all of these
