@@ -11,6 +11,8 @@ from typing import Iterator
 from rich.console import Console
 from rich.markdown import Markdown
 
+from repowiki.model import Answer, Reference, SourceFile
+
 _PAGE_DELIMITER = re.compile(r"^# Page: (.*)$", re.MULTILINE)
 _DETAILS_TAG = re.compile(r"</?details[^>]*>", re.IGNORECASE)
 _SUMMARY_TAG = re.compile(r"<summary[^>]*>(.*?)</summary>", re.IGNORECASE | re.DOTALL)
@@ -93,14 +95,18 @@ def status(message: str) -> Iterator[None]:
         yield
 
 
-from repowiki.model import Answer, Reference, SourceFile
-
-
 def _clean_path(file_path: str) -> str:
     """Strip a leading 'Repo owner/repo: ' prefix from a reference path."""
     if ": " in file_path:
         return file_path.split(": ", 1)[1]
     return file_path
+
+
+def _range_label(path: str, start: int | None, end: int | None) -> str:
+    """Format a path with its line range, omitting the range when absent."""
+    if start is None and end is None:
+        return path
+    return f"{path}:{start}-{end}"
 
 
 def _fill_citations(body: str, references: list[Reference]) -> str:
@@ -123,17 +129,19 @@ def _render_slice(ref: Reference, sources: list[SourceFile]) -> str | None:
     if src is None:
         return None
     lines = src.content.split("\n")
-    lo = max(0, (ref.range_start or 1) - 1)
-    hi = min(len(lines), ref.range_end or len(lines))
+    start = ref.range_start if ref.range_start is not None else 1
+    end = ref.range_end if ref.range_end is not None else len(lines)
+    lo = max(0, start - 1)
+    hi = min(len(lines), end)
     numbered = "\n".join(f"{n:4d} {lines[n - 1]}" for n in range(lo + 1, hi + 1))
-    return f"```\n{path}:{ref.range_start}-{ref.range_end}\n{numbered}\n```"
+    return f"```\n{_range_label(path, ref.range_start, ref.range_end)}\n{numbered}\n```"
 
 
 def _format_sources(references: list[Reference], sources: list[SourceFile], show_sources: bool) -> str:
     lines = ["## Sources", ""]
     for i, ref in enumerate(references, 1):
         path = _clean_path(ref.file_path)
-        lines.append(f"{i}. {path}:{ref.range_start}-{ref.range_end}")
+        lines.append(f"{i}. {_range_label(path, ref.range_start, ref.range_end)}")
         if show_sources:
             slice_text = _render_slice(ref, sources)
             if slice_text:

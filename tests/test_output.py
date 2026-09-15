@@ -122,6 +122,28 @@ def test_format_answer_sources_flag_adds_slices():
     assert "l1" in out and "l2" in out
 
 
+def test_format_answer_none_range_omits_label():
+    a = Answer(
+        body="body .",
+        references=[Reference("Repo a/b: f.py")],
+        sources=[SourceFile("a/b", "f.py", "l1\nl2\nl3")],
+    )
+    out = format_answer(a)
+    assert "1. f.py" in out
+    assert "None-None" not in out
+
+
+def test_format_answer_none_range_slice_omits_label():
+    a = Answer(
+        body="body .",
+        references=[Reference("Repo a/b: f.py")],
+        sources=[SourceFile("a/b", "f.py", "l1\nl2\nl3")],
+    )
+    out = format_answer(a, show_sources=True)
+    assert "None-None" not in out
+    assert "l1" in out
+
+
 def test_format_list_renders_repos():
     result = {"indices": [
         {"repo_name": "facebook/react", "last_modified": "2026-09-12"},

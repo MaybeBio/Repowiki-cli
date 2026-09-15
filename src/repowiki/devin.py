@@ -154,10 +154,12 @@ class DevinClient:
             "generate_summary": generate_summary,
         }
         async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
-            await self._post_json("/ada/query", json=payload, client=client)
             deadline = time.monotonic() + timeout
+            await self._post_json("/ada/query", json=payload, client=client)
             while True:
                 await asyncio.sleep(poll_interval)
+                if time.monotonic() > deadline:
+                    raise ToolError("timed out waiting for answer")
                 data = await self._get_json(f"/ada/query/{qid}", client=client)
                 queries = data.get("queries")
                 if not queries:
@@ -165,8 +167,6 @@ class DevinClient:
                 query = queries[-1]
                 if query.get("state") in ("done", "error"):
                     break
-                if time.monotonic() > deadline:
-                    raise ToolError("timed out waiting for answer")
         if query.get("error"):
             raise ToolError(str(query["error"]))
         return parse_response(query, qid)

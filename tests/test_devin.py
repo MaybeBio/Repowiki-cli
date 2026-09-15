@@ -165,6 +165,22 @@ async def test_devin_ask_timeout(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_devin_ask_timeout_skips_polling(monkeypatch):
+    pending = {"state": "pending", "error": None, "response": []}
+    fake = _FakeAsyncClient(gets=[pending])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    with pytest.raises(ToolError, match="timed out"):
+        await devin_mod.DevinClient().ask(["a/b"], "q?", poll_interval=0, timeout=0.0)
+    assert fake.get_calls == []
+
+
+@pytest.mark.asyncio
+async def test_devin_ask_unknown_mode():
+    with pytest.raises(ToolError, match="unknown mode"):
+        await devin_mod.DevinClient().ask(["a/b"], "q?", mode="bogus")
+
+
+@pytest.mark.asyncio
 async def test_devin_ask_keeps_polling_on_nonterminal_state(monkeypatch):
     processing = {"state": "processing", "error": None, "response": []}
     done = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}
@@ -257,6 +273,19 @@ async def test_list_public_indexes(monkeypatch):
     result = await devin_mod.DevinClient().list_public_indexes("react")
     assert result["indices"][0]["repo_name"] == "a/b"
     assert fake.calls == [("GET", "/ada/list_public_indexes", {"search_repo": "react"})]
+
+
+@pytest.mark.asyncio
+async def test_management_get_http_error_surfaces_detail(monkeypatch):
+    exc = httpx.HTTPStatusError(
+        "500",
+        request=httpx.Request("GET", "http://x"),
+        response=httpx.Response(500, json={"detail": "boom"}),
+    )
+    fake = _FakeAsyncClient(gets=[], post_exc=exc)
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    with pytest.raises(ToolError, match="boom"):
+        await devin_mod.DevinClient().list_public_indexes("react")
 
 
 @pytest.mark.asyncio
