@@ -286,3 +286,20 @@ async def test_get_query_parses_answer(monkeypatch):
     assert answer.body == "hi"
     assert answer.query_id == "qid-1"
     assert fake.calls == [("GET", "/ada/query/qid-1", None)]
+
+
+@pytest.mark.asyncio
+async def test_devin_ask_reuses_one_connection(monkeypatch):
+    processing = {"state": "processing", "error": None, "response": []}
+    done = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}
+    fake = _FakeAsyncClient(gets=[processing, done])
+    created = []
+
+    def factory(**kw):
+        created.append(kw)
+        return fake
+
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", factory)
+    answer = await devin_mod.DevinClient().ask("a/b", "q?", poll_interval=0)
+    assert answer.body == "hi"
+    assert len(created) == 1

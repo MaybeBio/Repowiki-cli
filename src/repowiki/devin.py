@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from contextlib import nullcontext
 from uuid import uuid4
 
 import httpx
@@ -80,10 +81,19 @@ class DevinClient:
     def __init__(self, base_url: str | None = None) -> None:
         self.base_url = base_url or os.environ.get("DEEPWIKI_API_URL", DEFAULT_API_URL)
 
-    async def _get_json(self, path: str, *, params: dict | None = None) -> dict:
+    async def _get_json(
+        self,
+        path: str,
+        *,
+        params: dict | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> dict:
+        ctx = nullcontext(client) if client is not None else httpx.AsyncClient(
+            base_url=self.base_url, timeout=30.0
+        )
         try:
-            async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
-                resp = await client.get(path, params=params)
+            async with ctx as c:
+                resp = await c.get(path, params=params)
                 resp.raise_for_status()
                 return resp.json()
         except httpx.TransportError as exc:
@@ -94,11 +104,19 @@ class DevinClient:
             ) from exc
 
     async def _post_json(
-        self, path: str, *, params: dict | None = None, json: dict | None = None
+        self,
+        path: str,
+        *,
+        params: dict | None = None,
+        json: dict | None = None,
+        client: httpx.AsyncClient | None = None,
     ) -> dict:
+        ctx = nullcontext(client) if client is not None else httpx.AsyncClient(
+            base_url=self.base_url, timeout=30.0
+        )
         try:
-            async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
-                resp = await client.post(path, params=params, json=json)
+            async with ctx as c:
+                resp = await c.post(path, params=params, json=json)
                 resp.raise_for_status()
                 return resp.json()
         except httpx.TransportError as exc:
@@ -135,19 +153,20 @@ class DevinClient:
             "attached_context": [],
             "generate_summary": generate_summary,
         }
-        await self._post_json("/ada/query", json=payload)
-        deadline = time.monotonic() + timeout
-        while True:
-            await asyncio.sleep(poll_interval)
-            data = await self._get_json(f"/ada/query/{qid}")
-            queries = data.get("queries")
-            if not queries:
-                raise ToolError("Devin API returned no query results")
-            query = queries[-1]
-            if query.get("state") in ("done", "error"):
-                break
-            if time.monotonic() > deadline:
-                raise ToolError("timed out waiting for answer")
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
+            await self._post_json("/ada/query", json=payload, client=client)
+            deadline = time.monotonic() + timeout
+            while True:
+                await asyncio.sleep(poll_interval)
+                data = await self._get_json(f"/ada/query/{qid}", client=client)
+                queries = data.get("queries")
+                if not queries:
+                    raise ToolError("Devin API returned no query results")
+                query = queries[-1]
+                if query.get("state") in ("done", "error"):
+                    break
+                if time.monotonic() > deadline:
+                    raise ToolError("timed out waiting for answer")
         if query.get("error"):
             raise ToolError(str(query["error"]))
         return parse_response(query, qid)
