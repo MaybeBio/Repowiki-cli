@@ -104,8 +104,11 @@ class DevinClient:
                     await asyncio.sleep(poll_interval)
                     resp = await client.get(f"/ada/query/{qid}")
                     resp.raise_for_status()
-                    query = resp.json()["queries"][-1]
-                    if query.get("state") != "pending":
+                    queries = resp.json().get("queries")
+                    if not queries:
+                        raise ToolError("Devin API returned no query results")
+                    query = queries[-1]
+                    if query.get("state") in ("done", "error"):
                         break
                     if time.monotonic() > deadline:
                         raise ToolError("timed out waiting for answer")

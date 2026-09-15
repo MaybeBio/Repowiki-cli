@@ -147,3 +147,34 @@ async def test_devin_ask_timeout(monkeypatch):
     monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
     with pytest.raises(ToolError, match="timed out"):
         await devin_mod.DevinClient().ask("a/b", "q?", poll_interval=0, timeout=0.0)
+
+
+@pytest.mark.asyncio
+async def test_devin_ask_keeps_polling_on_nonterminal_state(monkeypatch):
+    processing = {"state": "processing", "error": None, "response": []}
+    done = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}
+    fake = _FakeAsyncClient(gets=[processing, done])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    answer = await devin_mod.DevinClient().ask("a/b", "q?", poll_interval=0)
+    assert answer.body == "hi"
+    assert len(fake.get_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_devin_ask_empty_queries(monkeypatch):
+    class _EmptyQueriesClient:
+        def __init__(self):
+            self.get_calls = 0
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return None
+        async def post(self, url, json=None):
+            return _Resp({"status": "success"})
+        async def get(self, url):
+            self.get_calls += 1
+            return _Resp({"queries": []})
+
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: _EmptyQueriesClient())
+    with pytest.raises(ToolError, match="no query results"):
+        await devin_mod.DevinClient().ask("a/b", "q?", poll_interval=0)

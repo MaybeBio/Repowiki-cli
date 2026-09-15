@@ -382,7 +382,8 @@ def ask(
         if not question.strip():
             _fail("Question must not be empty.", "invalid_input", json)
         try:
-            answer = _run_ask(resolved, question, mode, query_id, use_devin)
+            with status("Thinking..."):
+                answer = _run_ask(resolved, question, mode, query_id, use_devin)
         except Exception as exc:
             _handle_exception(exc, json)
         _emit_answer(resolved, question, answer, rich, json, sources)
