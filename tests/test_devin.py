@@ -109,15 +109,17 @@ async def test_devin_ask_builds_payload_and_parses(monkeypatch):
     monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
 
     answer = await devin_mod.DevinClient(base_url="https://example.com").ask(
-        "a/b", "q?", mode="deep", poll_interval=0
+        ["a/b", "c/d"], "q?", mode="deep", poll_interval=0, context="ctx", generate_summary=False
     )
 
     assert answer.body == "hi"
     url, payload = fake.post_calls[0]
     assert url == "/ada/query"
     assert payload["engine_id"] == "agent"
-    assert payload["repo_names"] == ["a/b"]
+    assert payload["repo_names"] == ["a/b", "c/d"]
     assert payload["user_query"] == "q?"
+    assert payload["additional_context"] == "ctx"
+    assert payload["generate_summary"] is False
     assert payload["attached_context"] == []
     assert payload["query_id"] == answer.query_id
     assert len(fake.get_calls) == 1
@@ -128,7 +130,7 @@ async def test_devin_ask_connection_failure(monkeypatch):
     fake = _FakeAsyncClient(gets=[], post_exc=httpx.ConnectError("refused"))
     monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
     with pytest.raises(ConnectionError):
-        await devin_mod.DevinClient().ask("a/b", "q?")
+        await devin_mod.DevinClient().ask(["a/b"], "q?")
 
 
 @pytest.mark.asyncio
@@ -141,7 +143,7 @@ async def test_devin_ask_http_error_surfaces_detail(monkeypatch):
     fake = _FakeAsyncClient(gets=[], post_exc=exc)
     monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
     with pytest.raises(ToolError, match="Repos not found"):
-        await devin_mod.DevinClient().ask("a/b", "q?")
+        await devin_mod.DevinClient().ask(["a/b"], "q?")
 
 
 @pytest.mark.asyncio
@@ -150,7 +152,7 @@ async def test_devin_ask_query_error(monkeypatch):
     fake = _FakeAsyncClient(gets=[done])
     monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
     with pytest.raises(ToolError, match="Repository not found"):
-        await devin_mod.DevinClient().ask("a/b", "q?", poll_interval=0)
+        await devin_mod.DevinClient().ask(["a/b"], "q?", poll_interval=0)
 
 
 @pytest.mark.asyncio
@@ -159,7 +161,7 @@ async def test_devin_ask_timeout(monkeypatch):
     fake = _FakeAsyncClient(gets=[pending])  # 单元素 → 一直 pending
     monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
     with pytest.raises(ToolError, match="timed out"):
-        await devin_mod.DevinClient().ask("a/b", "q?", poll_interval=0, timeout=0.0)
+        await devin_mod.DevinClient().ask(["a/b"], "q?", poll_interval=0, timeout=0.0)
 
 
 @pytest.mark.asyncio
@@ -168,7 +170,7 @@ async def test_devin_ask_keeps_polling_on_nonterminal_state(monkeypatch):
     done = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}
     fake = _FakeAsyncClient(gets=[processing, done])
     monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
-    answer = await devin_mod.DevinClient().ask("a/b", "q?", poll_interval=0)
+    answer = await devin_mod.DevinClient().ask(["a/b"], "q?", poll_interval=0)
     assert answer.body == "hi"
     assert len(fake.get_calls) == 2
 
@@ -190,7 +192,7 @@ async def test_devin_ask_empty_queries(monkeypatch):
 
     monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: _EmptyQueriesClient())
     with pytest.raises(ToolError, match="no query results"):
-        await devin_mod.DevinClient().ask("a/b", "q?", poll_interval=0)
+        await devin_mod.DevinClient().ask(["a/b"], "q?", poll_interval=0)
 
 
 @pytest.mark.asyncio

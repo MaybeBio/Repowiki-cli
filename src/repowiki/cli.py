@@ -169,21 +169,26 @@ def _emit(
 
 
 def _run_ask(
-    repo: str,
+    repos: list[str],
     question: str,
     mode: str | None,
     query_id: str | None,
     use_devin: bool,
+    context: str,
+    generate_summary: bool,
 ) -> Answer:
     if use_devin:
         if (mock := os.environ.get("REPOWIKI_DEVIN_MOCK")) is not None:
             return Answer(body=mock)
         return run_async(
-            DevinClient().ask(repo, question, mode=mode or "fast", query_id=query_id)
+            DevinClient().ask(
+                repos, question, mode=mode or "fast", query_id=query_id,
+                context=context, generate_summary=generate_summary,
+            )
         )
     if (mock := _mock_text()) is not None:
         return Answer(body=mock)
-    return run_async(DeepWikiClient().ask_question(repo, question))
+    return run_async(DeepWikiClient().ask_question(repos[0], question))
 
 
 def _emit_answer(
@@ -258,12 +263,14 @@ async def _repl(resolved: str, rich: bool, save_path: str | None) -> None:
 
 
 async def _repl_devin(
-    resolved: str,
+    repos: list[str],
     rich: bool,
     save_path: str | None,
     mode: str,
     initial_query_id: str | None,
     show_sources: bool,
+    context: str,
+    generate_summary: bool,
 ) -> None:
     prompt = _repl_prompt()
     devin = DevinClient()
@@ -285,12 +292,15 @@ async def _repl_devin(
             continue
         try:
             with status("Thinking..."):
-                answer = await devin.ask(resolved, q, mode=mode, query_id=last_qid)
+                answer = await devin.ask(
+                    repos, q, mode=mode, query_id=last_qid,
+                    context=context, generate_summary=generate_summary,
+                )
         except Exception as exc:
             _print_error(exc)
             continue
         last_qid = answer.query_id
-        _append_save(save_path, resolved, q, answer.body)
+        _append_save(save_path, repos[0], q, answer.body)
         typer.echo()
         rendered = format_answer(answer, show_sources=show_sources).strip()
         if rich:
@@ -369,6 +379,15 @@ def ask(
     sources: bool = typer.Option(
         False, "--sources", help="Show source-code slices for citations (reverse backend)",
     ),
+    no_summary: bool = typer.Option(
+        False, "--no-summary", help="Skip summary generation (reverse backend)",
+    ),
+    context: Optional[str] = typer.Option(
+        None, "--context", help="Additional context for the question (reverse backend)",
+    ),
+    extra_repos: Optional[list[str]] = typer.Option(
+        None, "--repo", help="Additional repos to query (repeatable, reverse backend)",
+    ),
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo, json)
@@ -376,14 +395,19 @@ def ask(
 
     if mode is not None and mode not in ("fast", "deep", "codemap"):
         _fail(f"Invalid --mode: {mode!r} (expected fast, deep, or codemap).", "invalid_input", json)
-    use_devin = bool(mode or query_id or sources)
+    all_repos = [resolved] + [_resolve_repo(r, json) for r in (extra_repos or [])]
+    use_devin = bool(mode or query_id or sources or extra_repos
+                     or (context is not None) or no_summary)
+    generate_summary = not no_summary
+    context_value = context or ""
 
     if question is not None:
         if not question.strip():
             _fail("Question must not be empty.", "invalid_input", json)
         try:
             with status("Thinking..."):
-                answer = _run_ask(resolved, question, mode, query_id, use_devin)
+                answer = _run_ask(all_repos, question, mode, query_id, use_devin,
+                                  context_value, generate_summary)
         except Exception as exc:
             _handle_exception(exc, json)
         _emit_answer(resolved, question, answer, rich, json, sources)
@@ -405,7 +429,8 @@ def ask(
     typer.echo()
     try:
         if use_devin:
-            run_async(_repl_devin(resolved, rich, save_path, mode or "fast", query_id, sources))
+            run_async(_repl_devin(all_repos, rich, save_path, mode or "fast", query_id,
+                                  sources, context_value, generate_summary))
         else:
             run_async(_repl(resolved, rich, save_path))
     except Exception as exc:

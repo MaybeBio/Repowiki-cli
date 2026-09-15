@@ -288,8 +288,8 @@ def test_ask_mode_routes_to_devin(monkeypatch):
     captured = {}
 
     class FakeDevin:
-        async def ask(self, repo, question, *, mode="fast", query_id=None):
-            captured.update(repo=repo, question=question, mode=mode, query_id=query_id)
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+            captured.update(repo=repos[0], question=question, mode=mode, query_id=query_id)
             return Answer(body="devin answer", query_id="q1")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
@@ -297,6 +297,38 @@ def test_ask_mode_routes_to_devin(monkeypatch):
     assert result.exit_code == 0
     assert captured["mode"] == "deep"
     assert "devin answer" in result.output
+
+
+def test_ask_repo_flag_routes_to_devin_and_multi_repo(monkeypatch):
+    captured = {}
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+            captured["repos"] = repos
+            return Answer(body="multi answer", query_id="q1")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(
+        app,
+        ["ask", "facebook/react", "diff?", "--repo", "remix-run/react-router", "--repo", "TanStack/router"],
+    )
+    assert result.exit_code == 0
+    assert captured["repos"] == ["facebook/react", "remix-run/react-router", "TanStack/router"]
+    assert "multi answer" in result.output
+
+
+def test_ask_context_and_no_summary_route_to_devin(monkeypatch):
+    captured = {}
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+            captured.update(context=context, generate_summary=generate_summary)
+            return Answer(body="ok")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--context", "in Chinese", "--no-summary"])
+    assert result.exit_code == 0
+    assert captured == {"context": "in Chinese", "generate_summary": False}
 
 
 def test_ask_no_flags_still_mcp(monkeypatch):
@@ -308,7 +340,7 @@ def test_ask_no_flags_still_mcp(monkeypatch):
 
 def test_ask_devin_json(monkeypatch):
     class FakeDevin:
-        async def ask(self, repo, question, *, mode="fast", query_id=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
             return Answer(
                 body="devin answer",
                 summary="sum",
@@ -335,7 +367,7 @@ def test_ask_devin_unindexed_exit_2(monkeypatch):
     from repowiki.client import ToolError
 
     class FailingDevin:
-        async def ask(self, repo, question, *, mode="fast", query_id=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
             raise ToolError("Devin API returned HTTP 400: Repos not found")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FailingDevin)
@@ -346,7 +378,7 @@ def test_ask_devin_unindexed_exit_2(monkeypatch):
 
 def test_ask_sources_renders_slices(monkeypatch):
     class FakeDevin:
-        async def ask(self, repo, question, *, mode="fast", query_id=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
             return Answer(
                 body="body .",
                 references=[Reference("f.py", 1, 2)],
@@ -367,7 +399,7 @@ def test_ask_repl_devin_auto_threads(monkeypatch):
     seen_qids = []
 
     class FakeDevin:
-        async def ask(self, repo, question, *, mode="fast", query_id=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
             seen_qids.append(query_id)
             return Answer(body=f"answer to {question}", query_id=f"qid-{question}")
 
@@ -385,7 +417,7 @@ def test_ask_repl_devin_new_resets_thread(monkeypatch):
     seen_qids = []
 
     class FakeDevin:
-        async def ask(self, repo, question, *, mode="fast", query_id=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
             seen_qids.append(query_id)
             return Answer(body=f"answer to {question}", query_id=f"qid-{question}")
 

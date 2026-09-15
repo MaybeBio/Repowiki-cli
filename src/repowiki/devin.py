@@ -110,13 +110,15 @@ class DevinClient:
 
     async def ask(
         self,
-        repo: str,
+        repos: list[str],
         question: str,
         *,
         mode: str = "fast",
         query_id: str | None = None,
         timeout: float = 120.0,
         poll_interval: float = 2.0,
+        context: str = "",
+        generate_summary: bool = True,
     ) -> Answer:
         engine_id = ENGINE_MAP.get(mode)
         if engine_id is None:
@@ -126,12 +128,12 @@ class DevinClient:
             "engine_id": engine_id,
             "user_query": question,
             "keywords": [],
-            "repo_names": [repo],
-            "additional_context": "",
+            "repo_names": list(repos),
+            "additional_context": context,
             "query_id": qid,
             "use_notes": False,
             "attached_context": [],
-            "generate_summary": True,
+            "generate_summary": generate_summary,
         }
         await self._post_json("/ada/query", json=payload)
         deadline = time.monotonic() + timeout
