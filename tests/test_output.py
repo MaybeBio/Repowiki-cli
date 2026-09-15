@@ -1,3 +1,5 @@
+import io
+
 import pytest
 
 from repowiki.output import (
@@ -6,6 +8,7 @@ from repowiki.output import (
     format_header,
     format_result,
     list_page_titles,
+    status,
 )
 
 
@@ -59,3 +62,13 @@ def test_prepare_markdown_summary_to_bold():
     assert "</details>" not in out
     assert "<summary>" not in out
     assert "- a.md" in out
+
+
+def test_status_is_silent_when_not_a_tty(monkeypatch):
+    buf = io.StringIO()  # StringIO.isatty() -> False
+    monkeypatch.setattr("sys.stderr", buf)
+    ran = []
+    with status("Thinking..."):
+        ran.append(True)
+    assert ran == [True]
+    assert buf.getvalue() == ""

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import re
+import sys
+from contextlib import contextmanager
+from typing import Iterator
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -55,3 +58,16 @@ def _prepare_markdown(text: str) -> str:
 def render_markdown(text: str) -> None:
     """Render Markdown text to the terminal via rich."""
     Console().print(Markdown(_prepare_markdown(text)))
+
+
+@contextmanager
+def status(message: str) -> Iterator[None]:
+    """Show a spinner on stderr while a slow call runs.
+
+    No-op when stderr is not a terminal, so piped output and tests stay clean.
+    """
+    if not sys.stderr.isatty():
+        yield
+        return
+    with Console(stderr=True).status(message):
+        yield

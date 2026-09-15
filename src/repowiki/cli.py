@@ -20,6 +20,7 @@ from repowiki.output import (
     format_header,
     format_result,
     render_markdown,
+    status,
 )
 from repowiki.repo import normalize_repo
 
@@ -92,7 +93,8 @@ def structure(
         return
     client = DeepWikiClient()
     try:
-        text = run_async(client.read_wiki_structure(resolved))
+        with status("Fetching table of contents..."):
+            text = run_async(client.read_wiki_structure(resolved))
     except Exception as exc:
         _handle_exception(exc)
     typer.echo(format_result(resolved, "structure", text))
@@ -111,7 +113,8 @@ def contents(
     else:
         client = DeepWikiClient()
         try:
-            text = run_async(client.read_wiki_contents(resolved))
+            with status("Fetching documentation..."):
+                text = run_async(client.read_wiki_contents(resolved))
         except Exception as exc:
             _handle_exception(exc)
     if page is not None:
@@ -141,7 +144,8 @@ def ask(
             return
         client = DeepWikiClient()
         try:
-            text = run_async(client.ask_question(resolved, question))
+            with status("Thinking..."):
+                text = run_async(client.ask_question(resolved, question))
         except Exception as exc:
             _handle_exception(exc)
         _emit(resolved, "ask", text, rich)
@@ -164,7 +168,8 @@ def ask(
         if q in ("/exit", "/quit", "/q"):
             break
         try:
-            answer = run_async(client.ask_question(resolved, q))
+            with status("Thinking..."):
+                answer = run_async(client.ask_question(resolved, q))
         except Exception as exc:
             _print_error(exc)
             continue
