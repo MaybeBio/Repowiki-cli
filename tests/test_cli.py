@@ -117,3 +117,43 @@ def test_ask_rich_mock(monkeypatch):
     result = runner.invoke(app, ["ask", "facebook/react", "q?", "--rich"])
     assert result.exit_code == 0
     assert "Answer" in result.output
+
+
+def test_ask_save_explicit_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "the answer")
+    out = tmp_path / "qa.md"
+    result = runner.invoke(
+        app, ["ask", "facebook/react", "what is fiber?", "--save", str(out)]
+    )
+    assert result.exit_code == 0
+    text = out.read_text()
+    assert "**Q:** what is fiber?" in text
+    assert "the answer" in text
+
+
+def test_ask_save_bare_auto_names(monkeypatch, tmp_path):
+    monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "the answer")
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["ask", "facebook/react", "what is fiber?", "--save"])
+    assert result.exit_code == 0
+    files = list(tmp_path.glob("repowiki-facebook-react_*.md"))
+    assert len(files) == 1
+    assert "the answer" in files[0].read_text()
+
+
+def test_ask_save_repl_appends(monkeypatch, tmp_path):
+    inputs = iter(["What is Fiber?", "What are hooks?", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+    class FakeClient:
+        async def ask_question(self, repo, question):
+            return f"answer to {question}"
+
+    monkeypatch.setattr("repowiki.cli.DeepWikiClient", FakeClient)
+    out = tmp_path / "qa.md"
+    result = runner.invoke(app, ["ask", "facebook/react", "--save", str(out)])
+    assert result.exit_code == 0
+    text = out.read_text()
+    assert text.count("**Q:**") == 2
+    assert "answer to What is Fiber?" in text
+    assert "answer to What are hooks?" in text

@@ -26,6 +26,8 @@ repowiki-cli contents vercel/next.js --page "Getting Started"   # one page only
 repowiki-cli contents vercel/next.js --rich                     # render Markdown
 repowiki-cli ask facebook/react "What is Fiber?"
 repowiki-cli ask facebook/react "What is Fiber?" --rich
+repowiki-cli ask facebook/react "What is Fiber?" --save            # auto-named file
+repowiki-cli ask facebook/react "What is Fiber?" --save notes/answers.md
 repowiki-cli ask facebook/react          # interactive REPL
 ```
 
@@ -43,6 +45,12 @@ question is passed, interactive REPL otherwise — type `/exit` to quit).
 - `--rich` (on `contents` and `ask`) — render the Markdown with color and
   formatting via [rich](https://github.com/Textualize/rich), so headings, lists
   and code blocks are easier to read. Default output is plain Markdown.
+- `--save [PATH]` (on `ask`) — save each answer to a Markdown file. Bare
+  `--save` auto-names the file as
+  `repowiki-<owner>-<repo>_<timestamp>.md` in the current directory; `--save
+  PATH` writes to (and appends to) the given path. In interactive mode all
+  answers in the session append to one file; single-shot answers append when
+  the file already exists.
 
 Repos may be given as `owner/repo`, `github.com/owner/repo`, or a full GitHub
 URL. The MCP endpoint defaults to `https://mcp.deepwiki.com/mcp` and can be

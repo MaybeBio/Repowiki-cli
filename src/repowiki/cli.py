@@ -6,6 +6,7 @@ import os
 from typing import Optional
 
 import typer
+from typer.core import TyperCommand
 
 from repowiki import __version__
 from repowiki.client import (
@@ -23,8 +24,41 @@ from repowiki.output import (
     status,
 )
 from repowiki.repo import normalize_repo
+from repowiki.save import append_entry, default_save_path
 
 app = typer.Typer(add_completion=False)
+
+# Sentinel injected into argv for a bare ``--save`` (no value). ``save`` then
+# resolves to an auto-generated filename instead of an explicit path.
+_SAVE_AUTO = "\x00auto\x00"
+
+
+def _normalize_save(args: list[str]) -> list[str]:
+    """Turn a bare ``--save`` into ``--save <sentinel>`` so typer accepts it.
+
+    Typer has no support for Click's optional-value flags (``flag_value``), so a
+    value-taking ``--save`` normally rejects a bare ``--save``. Rewriting the
+    bare form here lets a single option cover both ``--save`` and
+    ``--save PATH``.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        out.append(tok)
+        if tok == "--save":
+            if i + 1 >= len(args) or args[i + 1].startswith("-"):
+                out.append(_SAVE_AUTO)
+            else:
+                out.append(args[i + 1])
+                i += 1
+        i += 1
+    return out
+
+
+class _AskCommand(TyperCommand):
+    def parse_args(self, ctx, args):
+        return super().parse_args(ctx, _normalize_save(args))
 
 
 def _version_callback(value: bool) -> None:
@@ -82,6 +116,19 @@ def _emit(repo: str, command: str, text: str, rich: bool) -> None:
         typer.echo(rendered)
 
 
+def _append_save(path: str | None, repo: str, question: str, answer: str) -> None:
+    if path is None:
+        return
+    try:
+        append_entry(path, repo, question, answer)
+    except OSError as exc:
+        typer.secho(
+            f"Warning: could not save to {path}: {exc}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+
 @app.command()
 def structure(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
@@ -126,14 +173,21 @@ def contents(
     _emit(resolved, "contents", text, rich)
 
 
-@app.command()
+@app.command(cls=_AskCommand)
 def ask(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     question: Optional[str] = typer.Argument(None, help="Question (omit for interactive mode)"),
     rich: bool = typer.Option(False, "--rich", help="Render Markdown with rich"),
+    save: Optional[str] = typer.Option(
+        None,
+        "--save",
+        help="Save answers to a Markdown file. Bare --save auto-names the file; "
+        "--save PATH writes/appends to PATH.",
+    ),
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo)
+    save_path = default_save_path(resolved) if save == _SAVE_AUTO else save
 
     if question is not None:
         if not question.strip():
@@ -141,6 +195,7 @@ def ask(
             raise typer.Exit(code=1)
         if (mock := _mock_text()) is not None:
             _emit(resolved, "ask", mock, rich)
+            _append_save(save_path, resolved, question, mock)
             return
         client = DeepWikiClient()
         try:
@@ -149,6 +204,7 @@ def ask(
         except Exception as exc:
             _handle_exception(exc)
         _emit(resolved, "ask", text, rich)
+        _append_save(save_path, resolved, question, text)
         return
 
     typer.echo(format_header(resolved, "ask"))
@@ -173,6 +229,7 @@ def ask(
         except Exception as exc:
             _print_error(exc)
             continue
+        _append_save(save_path, resolved, q, answer)
         if rich:
             render_markdown(answer)
         else:
