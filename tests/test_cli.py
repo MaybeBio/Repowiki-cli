@@ -449,3 +449,93 @@ def test_ask_save_repl_appends(monkeypatch, tmp_path):
     assert text.count("**Q:**") == 2
     assert "answer to What is Fiber?" in text
     assert "answer to What are hooks?" in text
+
+
+def _fake_devin_class(answers):
+    class _FakeDevin:
+        def __init__(self, *a, **kw):
+            pass
+        def __getattr__(self, name):
+            async def _call(*a, **kw):
+                if name in answers:
+                    return answers[name]
+                raise AssertionError(f"unexpected call {name}")
+            return _call
+    return _FakeDevin
+
+
+def test_list_command(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.cli.DevinClient",
+        _fake_devin_class({"list_public_indexes": {"indices": [{"repo_name": "facebook/react", "last_modified": "2026-09-12"}]}}),
+    )
+    result = runner.invoke(app, ["list", "react"])
+    assert result.exit_code == 0
+    assert "facebook/react" in result.output
+
+
+def test_list_command_json(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.cli.DevinClient",
+        _fake_devin_class({"list_public_indexes": {"indices": [], "needs_reindex": [], "pending_repos": []}}),
+    )
+    result = runner.invoke(app, ["list", "react", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["command"] == "list"
+    assert data["search"] == "react"
+
+
+def test_status_command(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.cli.DevinClient",
+        _fake_devin_class({"public_repo_indexing_status": {"status": "completed"}}),
+    )
+    result = runner.invoke(app, ["status", "facebook/react"])
+    assert result.exit_code == 0
+    assert "facebook/react: completed" in result.output
+
+
+def test_status_unknown_exits_zero(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.cli.DevinClient",
+        _fake_devin_class({"public_repo_indexing_status": {"status": "unknown"}}),
+    )
+    result = runner.invoke(app, ["status", "nope/nope"])
+    assert result.exit_code == 0
+    assert "unknown" in result.output
+
+
+def test_warm_command(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.cli.DevinClient",
+        _fake_devin_class({"warm_public_repo": {"status": "OK"}}),
+    )
+    result = runner.invoke(app, ["warm", "facebook/react"])
+    assert result.exit_code == 0
+    assert "warmed facebook/react (OK)" in result.output
+
+
+def test_get_command(monkeypatch):
+    from repowiki.model import Answer
+    monkeypatch.setattr(
+        "repowiki.cli.DevinClient",
+        _fake_devin_class({"get_query": Answer(body="past answer", query_id="q1")}),
+    )
+    result = runner.invoke(app, ["get", "q1"])
+    assert result.exit_code == 0
+    assert "past answer" in result.output
+
+
+def test_get_command_json(monkeypatch):
+    from repowiki.model import Answer
+    monkeypatch.setattr(
+        "repowiki.cli.DevinClient",
+        _fake_devin_class({"get_query": Answer(body="past", query_id="q1")}),
+    )
+    result = runner.invoke(app, ["get", "q1", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["command"] == "get"
+    assert data["query_id"] == "q1"
+    assert data["answer"] == "past"

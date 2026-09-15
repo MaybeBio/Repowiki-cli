@@ -23,10 +23,14 @@ from repowiki.model import Answer
 from repowiki.output import (
     filter_page,
     format_answer,
+    format_command_json,
     format_error_json,
     format_header,
     format_json,
+    format_list,
     format_result,
+    format_status,
+    format_warm,
     render_markdown,
     status,
 )
@@ -191,6 +195,24 @@ def _run_ask(
     return run_async(DeepWikiClient().ask_question(repos[0], question))
 
 
+def _answer_json_fields(answer: Answer) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "answer": answer.body,
+        "truncated": answer.truncated,
+    }
+    if answer.summary:
+        fields["summary"] = answer.summary
+    if answer.references:
+        fields["references"] = [asdict(r) for r in answer.references]
+    if answer.sources:
+        fields["sources"] = [asdict(s) for s in answer.sources]
+    if answer.stats:
+        fields["stats"] = answer.stats
+    if answer.query_id:
+        fields["query_id"] = answer.query_id
+    return fields
+
+
 def _emit_answer(
     repo: str,
     question: str,
@@ -200,21 +222,8 @@ def _emit_answer(
     show_sources: bool,
 ) -> None:
     if json_mode:
-        fields: dict[str, object] = {
-            "question": question,
-            "answer": answer.body,
-            "truncated": answer.truncated,
-        }
-        if answer.summary:
-            fields["summary"] = answer.summary
-        if answer.references:
-            fields["references"] = [asdict(r) for r in answer.references]
-        if answer.sources:
-            fields["sources"] = [asdict(s) for s in answer.sources]
-        if answer.stats:
-            fields["stats"] = answer.stats
-        if answer.query_id:
-            fields["query_id"] = answer.query_id
+        fields = _answer_json_fields(answer)
+        fields = {"question": question, **fields}
         typer.echo(format_json(repo, "ask", **fields))
         return
     _emit(repo, "ask", format_answer(answer, show_sources=show_sources), rich, False)
@@ -435,6 +444,95 @@ def ask(
             run_async(_repl(resolved, rich, save_path))
     except Exception as exc:
         _handle_exception(exc)
+
+
+@app.command("list")
+def list_indexes(
+    search: str = typer.Argument(..., help="Search term for indexed repos"),
+    json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Search DeepWiki's indexed public repositories."""
+    client = DevinClient()
+    try:
+        with status("Searching..."):
+            result = run_async(client.list_public_indexes(search))
+    except Exception as exc:
+        _handle_exception(exc, json)
+    if json:
+        typer.echo(format_command_json(
+            "list", search=search,
+            indices=result.get("indices", []),
+            needs_reindex=result.get("needs_reindex", []),
+            pending_repos=result.get("pending_repos", []),
+        ))
+        return
+    typer.echo(format_list(result))
+
+
+# Named ``status_cmd`` (not ``status``) because the module-level ``status``
+# spinner contextmanager from ``repowiki.output`` is referenced by every other
+# command; a function named ``status`` would shadow it. The CLI name stays
+# ``status`` via the explicit decorator argument, mirroring ``list``.
+@app.command("status")
+def status_cmd(
+    repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
+    json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Check a repository's indexing status on DeepWiki."""
+    resolved = _resolve_repo(repo, json)
+    client = DevinClient()
+    try:
+        with status("Checking..."):
+            result = run_async(client.public_repo_indexing_status(resolved))
+    except Exception as exc:
+        _handle_exception(exc, json)
+    if json:
+        typer.echo(format_command_json("status", repo=resolved, status=result.get("status")))
+        return
+    typer.echo(format_status(resolved, result))
+
+
+@app.command()
+def warm(
+    repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
+    json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Pre-warm a repository's documentation cache on DeepWiki."""
+    resolved = _resolve_repo(repo, json)
+    client = DevinClient()
+    try:
+        with status("Warming..."):
+            result = run_async(client.warm_public_repo(resolved))
+    except Exception as exc:
+        _handle_exception(exc, json)
+    if json:
+        typer.echo(format_command_json("warm", repo=resolved, status=result.get("status")))
+        return
+    typer.echo(format_warm(resolved, result))
+
+
+@app.command()
+def get(
+    query_id: str = typer.Argument(..., help="Query id to retrieve"),
+    rich: bool = typer.Option(False, "--rich", help="Render Markdown with rich"),
+    sources: bool = typer.Option(False, "--sources", help="Show source-code slices"),
+    json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Retrieve the result of a previous query by id."""
+    client = DevinClient()
+    try:
+        with status("Fetching..."):
+            answer = run_async(client.get_query(query_id))
+    except Exception as exc:
+        _handle_exception(exc, json)
+    if json:
+        typer.echo(format_command_json("get", **_answer_json_fields(answer)))
+        return
+    rendered = format_answer(answer, show_sources=sources)
+    if rich:
+        render_markdown(rendered)
+    else:
+        typer.echo(rendered)
 
 
 def main() -> None:
