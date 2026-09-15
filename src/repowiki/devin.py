@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
+from collections.abc import Callable
 from contextlib import nullcontext
 from uuid import uuid4
 
 import httpx
+import websockets
+from websockets.exceptions import ConnectionClosedOK, WebSocketException
 
 from repowiki.client import ConnectionError, ToolError
 from repowiki.model import Answer, Reference, SourceFile
@@ -137,6 +141,7 @@ class DevinClient:
         poll_interval: float = 2.0,
         context: str = "",
         generate_summary: bool = True,
+        on_chunk: Callable[[str], None] | None = None,
     ) -> Answer:
         engine_id = ENGINE_MAP.get(mode)
         if engine_id is None:
@@ -154,8 +159,11 @@ class DevinClient:
             "generate_summary": generate_summary,
         }
         async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
-            deadline = time.monotonic() + timeout
             await self._post_json("/ada/query", json=payload, client=client)
+            if on_chunk is not None:
+                events = await self._stream_chunks(qid, on_chunk, timeout=timeout)
+                return parse_response({"response": events}, qid)
+            deadline = time.monotonic() + timeout
             while True:
                 await asyncio.sleep(poll_interval)
                 if time.monotonic() > deadline:
@@ -170,6 +178,47 @@ class DevinClient:
         if query.get("error"):
             raise ToolError(str(query["error"]))
         return parse_response(query, qid)
+
+    async def _stream_chunks(
+        self, qid: str, on_chunk: Callable[[str], None], *, timeout: float
+    ) -> list[dict]:
+        """Stream events over the WebSocket, emitting chunks, until 'done'.
+
+        Returns the full event list so the caller can assemble a complete
+        Answer (body, summary, references, sources) without a follow-up GET.
+        """
+        ws_url = f"{self.base_url.replace('http', 'ws', 1)}/ada/ws/query/{qid}"
+        deadline = time.monotonic() + timeout
+        events: list[dict] = []
+        try:
+            async with websockets.connect(ws_url) as ws:
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise ToolError("timed out waiting for answer")
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                    except asyncio.TimeoutError:
+                        raise ToolError("timed out waiting for answer")
+                    except ConnectionClosedOK:
+                        break
+                    try:
+                        msg = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(msg, dict):
+                        continue
+                    kind = msg.get("type")
+                    if kind is None:
+                        continue
+                    if kind == "done":
+                        break
+                    events.append(msg)
+                    if kind == "chunk":
+                        on_chunk(msg.get("data", ""))
+        except (OSError, WebSocketException) as exc:
+            raise ConnectionError(f"WebSocket connection failed: {exc}") from exc
+        return events
 
     async def list_public_indexes(self, search: str) -> dict:
         return await self._get_json("/ada/list_public_indexes", params={"search_repo": search})

@@ -160,6 +160,16 @@ def format_answer(answer: Answer, *, show_sources: bool = False) -> str:
     return "\n\n".join(parts)
 
 
+def format_answer_tail(answer: Answer, *, show_sources: bool = False) -> str:
+    """Render an Answer's summary and sources (no body) for streamed output."""
+    parts = []
+    if answer.summary:
+        parts.append(f"## Summary\n\n{answer.summary.strip()}")
+    if answer.references:
+        parts.append(_format_sources(answer.references, answer.sources, show_sources))
+    return "\n\n".join(parts)
+
+
 def format_list(result: dict) -> str:
     """Render a list_public_indexes result as one line per indexed repo."""
     indices = result.get("indices") or []

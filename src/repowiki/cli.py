@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from dataclasses import asdict
@@ -24,6 +25,7 @@ from repowiki.model import Answer
 from repowiki.output import (
     filter_page,
     format_answer,
+    format_answer_tail,
     format_command_json,
     format_error_json,
     format_header,
@@ -181,10 +183,19 @@ def _run_ask(
     use_devin: bool,
     context: str,
     generate_summary: bool,
+    on_chunk=None,
 ) -> Answer:
     if use_devin:
         if (mock := os.environ.get("REPOWIKI_DEVIN_MOCK")) is not None:
             return Answer(body=mock)
+        if on_chunk is not None:
+            return run_async(
+                DevinClient().ask(
+                    repos, question, mode=mode or "fast", query_id=query_id,
+                    context=context, generate_summary=generate_summary,
+                    on_chunk=on_chunk,
+                )
+            )
         return run_async(
             DevinClient().ask(
                 repos, question, mode=mode or "fast", query_id=query_id,
@@ -194,6 +205,19 @@ def _run_ask(
     if (mock := _mock_text()) is not None:
         return Answer(body=mock)
     return run_async(DeepWikiClient().ask_question(repos[0], question))
+
+
+def _stream_chunk(text: str) -> None:
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
+def _emit_streamed_answer(answer: Answer, show_sources: bool) -> None:
+    tail = format_answer_tail(answer, show_sources=show_sources)
+    if tail:
+        typer.echo(f"\n\n{tail}")
+    else:
+        typer.echo()
 
 
 def _answer_json_fields(answer: Answer) -> dict[str, object]:
@@ -272,6 +296,64 @@ async def _repl(resolved: str, rich: bool, save_path: str | None) -> None:
             typer.echo()
 
 
+_REPL_MAX_ATTEMPTS = 3
+_REPL_RETRY_BASE = 1.0
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """True for transient failures worth retrying (connection / 5xx)."""
+    if isinstance(exc, ConnectionError):
+        return True
+    if isinstance(exc, ToolError):
+        return "HTTP 5" in str(exc)
+    return False
+
+
+async def _ask_repl(
+    devin: DevinClient,
+    repos: list[str],
+    question: str,
+    *,
+    mode: str,
+    query_id: str | None,
+    context: str,
+    generate_summary: bool,
+) -> Answer:
+    """Ask with bounded backoff retry on transient failures.
+
+    Retries only while nothing has streamed yet — once a partial answer has
+    reached the terminal, a dropped connection is reported rather than
+    re-streaming garbled text.
+    """
+    emitted = 0
+    for attempt in range(_REPL_MAX_ATTEMPTS):
+        def on_chunk(text: str) -> None:
+            nonlocal emitted
+            emitted += 1
+            _stream_chunk(text)
+
+        try:
+            return await devin.ask(
+                repos,
+                question,
+                mode=mode,
+                query_id=query_id,
+                context=context,
+                generate_summary=generate_summary,
+                on_chunk=on_chunk,
+            )
+        except Exception as exc:
+            if not _is_retryable(exc) or emitted or attempt == _REPL_MAX_ATTEMPTS - 1:
+                raise
+            delay = _REPL_RETRY_BASE * (2 ** attempt)
+            typer.secho(
+                f"Transient error ({_error_message(exc)}); retrying in {delay:.0f}s…",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+            await asyncio.sleep(delay)
+
+
 async def _repl_devin(
     repos: list[str],
     rich: bool,
@@ -301,22 +383,23 @@ async def _repl_devin(
             typer.echo("(started a new thread)")
             continue
         try:
-            with status("Thinking..."):
-                answer = await devin.ask(
-                    repos, q, mode=mode, query_id=last_qid,
-                    context=context, generate_summary=generate_summary,
-                )
+            answer = await _ask_repl(
+                devin, repos, q, mode=mode, query_id=last_qid,
+                context=context, generate_summary=generate_summary,
+            )
         except Exception as exc:
             _print_error(exc)
             continue
         last_qid = answer.query_id
         _append_save(save_path, repos[0], q, answer.body)
-        typer.echo()
-        rendered = format_answer(answer, show_sources=show_sources).strip()
-        if rich:
-            render_markdown(rendered)
+        tail = format_answer_tail(answer, show_sources=show_sources)
+        if tail:
+            if rich:
+                render_markdown(tail)
+            else:
+                typer.echo(f"\n\n{tail}")
         else:
-            typer.echo(rendered)
+            typer.echo()
         typer.echo()
 
 
@@ -401,6 +484,9 @@ def ask(
     mermaid: bool = typer.Option(
         False, "--mermaid", help="Output a Mermaid diagram (codemap mode only)",
     ),
+    stream: bool = typer.Option(
+        False, "--stream", help="Stream answer chunks as they arrive (reverse backend)",
+    ),
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo, json)
@@ -410,17 +496,28 @@ def ask(
         _fail(f"Invalid --mode: {mode!r} (expected fast, deep, or codemap).", "invalid_input", json)
     all_repos = [resolved] + [_resolve_repo(r, json) for r in (extra_repos or [])]
     use_devin = bool(mode or query_id or sources or extra_repos
-                     or (context is not None) or no_summary)
+                     or (context is not None) or no_summary or stream)
     generate_summary = not no_summary
     context_value = context or ""
+
+    if stream and json:
+        typer.secho(
+            "Warning: --stream has no effect with --json.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
     if question is not None:
         if not question.strip():
             _fail("Question must not be empty.", "invalid_input", json)
         try:
-            with status("Thinking..."):
+            if stream and not json:
                 answer = _run_ask(all_repos, question, mode, query_id, use_devin,
-                                  context_value, generate_summary)
+                                  context_value, generate_summary, on_chunk=_stream_chunk)
+            else:
+                with status("Thinking..."):
+                    answer = _run_ask(all_repos, question, mode, query_id, use_devin,
+                                      context_value, generate_summary)
         except Exception as exc:
             _handle_exception(exc, json)
         if mermaid:
@@ -440,7 +537,10 @@ def ask(
                 fg=typer.colors.YELLOW,
                 err=True,
             )
-        _emit_answer(resolved, question, answer, rich, json, sources)
+        if stream and not json:
+            _emit_streamed_answer(answer, sources)
+        else:
+            _emit_answer(resolved, question, answer, rich, json, sources)
         _append_save(save_path, resolved, question, answer.body)
         return
 

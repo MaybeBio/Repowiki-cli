@@ -56,6 +56,7 @@ repowiki-cli ask facebook/react "What is Fiber?" --mode deep      # fast|deep|co
 repowiki-cli ask facebook/react "Follow-up?" --id <query-id>      # continue a thread
 repowiki-cli ask facebook/react "What is Fiber?" --mode deep --sources
 repowiki-cli ask facebook/react "Show data flow" --mode codemap --mermaid
+repowiki-cli ask facebook/react "What is Fiber?" --mode deep --stream
 repowiki-cli ask facebook/react --mode deep                       # interactive, auto-threads
 repowiki-cli ask facebook/react "What is Fiber?" --context "answer in Chinese"
 repowiki-cli ask facebook/react "What is Fiber?" --no-summary
@@ -73,6 +74,9 @@ repowiki-cli ask facebook/react "diff?" --repo remix-run/react-router --repo Tan
   the raw codemap JSON. Meant for `--mode codemap`; if the answer is not a
   codemap it warns and falls back to plain text. Paste the output into
   mermaid.live, GitHub, or VS Code to view the diagram.
+- `--stream` — stream answer text word-by-word as it arrives over a WebSocket
+  instead of waiting for the full answer, then append the summary and sources.
+  Has no effect with `--json`.
 
 The reverse backend also returns source files, line-range citations, and a
 separate summary that MCP drops. `--json` carries all of these

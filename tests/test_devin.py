@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -349,3 +351,90 @@ async def test_devin_ask_reuses_one_connection(monkeypatch):
     answer = await devin_mod.DevinClient().ask("a/b", "q?", poll_interval=0)
     assert answer.body == "hi"
     assert len(created) == 1
+
+
+class _FakeWS:
+    """Scripted websockets stand-in: pops one serialized message per recv()."""
+
+    def __init__(self, messages):
+        self._messages = list(messages)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return None
+
+    async def recv(self):
+        return self._messages.pop(0)
+
+
+def _ws_event(kind, data=None):
+    payload = {"type": kind}
+    if data is not None:
+        payload["data"] = data
+    return json.dumps(payload)
+
+
+@pytest.mark.asyncio
+async def test_devin_ask_streams_chunks_over_websocket(monkeypatch):
+    messages = [
+        _ws_event("chunk", "Hello "),
+        _ws_event("chunk", "world"),
+        _ws_event("chunk", "!"),
+        _ws_event("summary_chunk", "A summary"),
+        _ws_event("reference", {"file_path": "Repo a/b: f.py", "range_start": 1, "range_end": 3}),
+        _ws_event("file_contents", ["a/b", "f.py", "line1\nline2\nline3"]),
+        _ws_event("stats", {"key": "load", "value": 0.5}),
+        _ws_event("done"),
+    ]
+    fake = _FakeAsyncClient(gets=[])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    monkeypatch.setattr(devin_mod.websockets, "connect", lambda url: _FakeWS(messages))
+
+    chunks = []
+    answer = await devin_mod.DevinClient().ask(["a/b"], "q?", poll_interval=0, on_chunk=chunks.append)
+    assert chunks == ["Hello ", "world", "!"]
+    assert answer.body == "Hello world!"
+    assert answer.summary == "A summary"
+    assert [r.file_path for r in answer.references] == ["Repo a/b: f.py"]
+    assert answer.sources == [SourceFile("a/b", "f.py", "line1\nline2\nline3")]
+    assert answer.stats == {"load": 0.5}
+    assert fake.get_calls == []  # no follow-up GET; the WS delivers the full answer
+
+
+@pytest.mark.asyncio
+async def test_devin_ask_stream_timeout(monkeypatch):
+    fake = _FakeAsyncClient(gets=[])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    monkeypatch.setattr(devin_mod.websockets, "connect", lambda url: _FakeWS([]))
+    with pytest.raises(ToolError, match="timed out"):
+        await devin_mod.DevinClient().ask(
+            ["a/b"], "q?", poll_interval=0, on_chunk=lambda c: None, timeout=0.0
+        )
+
+
+@pytest.mark.asyncio
+async def test_devin_ask_stream_connection_failure(monkeypatch):
+    fake = _FakeAsyncClient(gets=[])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+
+    def failing_connect(url):
+        raise devin_mod.WebSocketException("refused")
+
+    monkeypatch.setattr(devin_mod.websockets, "connect", failing_connect)
+    with pytest.raises(ConnectionError, match="WebSocket"):
+        await devin_mod.DevinClient().ask(["a/b"], "q?", on_chunk=lambda c: None)
+
+
+@pytest.mark.asyncio
+async def test_devin_ask_stream_os_error_maps_to_connection_error(monkeypatch):
+    fake = _FakeAsyncClient(gets=[])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+
+    def refused_connect(url):
+        raise ConnectionRefusedError("refused")
+
+    monkeypatch.setattr(devin_mod.websockets, "connect", refused_connect)
+    with pytest.raises(ConnectionError, match="WebSocket"):
+        await devin_mod.DevinClient().ask(["a/b"], "q?", on_chunk=lambda c: None)

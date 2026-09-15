@@ -2,7 +2,8 @@ import json
 
 from typer.testing import CliRunner
 
-from repowiki.cli import app
+from repowiki.client import ConnectionError, ToolError
+from repowiki.cli import _is_retryable, app
 from repowiki.model import Answer, Reference, SourceFile
 
 runner = CliRunner()
@@ -480,14 +481,43 @@ def test_ask_mermaid_json(monkeypatch):
     assert data["query_id"] == "q1"
 
 
+def test_ask_stream_routes_to_devin_and_streams(monkeypatch):
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+            if on_chunk:
+                on_chunk("streamed ")
+                on_chunk("answer")
+            return Answer(body="streamed answer", summary="a summary")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--stream"])
+    assert result.exit_code == 0
+    assert "streamed answer" in result.output
+    assert "a summary" in result.output
+
+
+def test_ask_stream_with_json_ignores_stream(monkeypatch):
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+            return Answer(body="plain")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--stream", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data["answer"] == "plain"
+
+
 def test_ask_repl_devin_auto_threads(monkeypatch):
     inputs = iter(["first", "second", "/exit"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
     seen_qids = []
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
             seen_qids.append(query_id)
+            if on_chunk:
+                on_chunk(f"answer to {question}")
             return Answer(body=f"answer to {question}", query_id=f"qid-{question}")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
@@ -504,7 +534,7 @@ def test_ask_repl_devin_new_resets_thread(monkeypatch):
     seen_qids = []
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
             seen_qids.append(query_id)
             return Answer(body=f"answer to {question}", query_id=f"qid-{question}")
 
@@ -512,6 +542,98 @@ def test_ask_repl_devin_new_resets_thread(monkeypatch):
     result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
     assert result.exit_code == 0
     assert seen_qids == [None, None]
+
+
+def test_ask_repl_devin_streams_chunks_then_summary(monkeypatch):
+    inputs = iter(["first", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+            assert on_chunk is not None
+            on_chunk("streamed ")
+            on_chunk("answer")
+            return Answer(body="streamed answer", summary="a summary", query_id="qid-1")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert "streamed answer" in result.stdout
+    assert "a summary" in result.stdout
+
+
+def test_is_retryable():
+    assert _is_retryable(ConnectionError("boom")) is True
+    assert _is_retryable(ToolError("Devin API returned HTTP 500")) is True
+    assert _is_retryable(ToolError("Devin API returned HTTP 502")) is True
+    assert _is_retryable(ToolError("unknown mode 'bogus'")) is False
+    assert _is_retryable(ValueError("nope")) is False
+
+
+async def _no_sleep(delay):
+    pass
+
+
+def test_ask_repl_retries_connection_error(monkeypatch):
+    inputs = iter(["first", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    calls = []
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+            calls.append(question)
+            if len(calls) == 1:
+                raise ConnectionError("refused")
+            if on_chunk:
+                on_chunk("recovered")
+            return Answer(body="recovered", query_id="qid-1")
+
+    monkeypatch.setattr("asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert calls == ["first", "first"]
+    assert "recovered" in result.stdout
+
+
+def test_ask_repl_retries_http_500(monkeypatch):
+    inputs = iter(["first", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    calls = []
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+            calls.append(question)
+            if len(calls) == 1:
+                raise ToolError("Devin API returned HTTP 500")
+            if on_chunk:
+                on_chunk("recovered")
+            return Answer(body="recovered", query_id="qid-1")
+
+    monkeypatch.setattr("asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert calls == ["first", "first"]
+    assert "recovered" in result.stdout
+
+
+def test_ask_repl_no_retry_on_non_transient(monkeypatch):
+    inputs = iter(["first", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    calls = []
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+            calls.append(question)
+            raise ToolError("unknown mode 'bogus'")
+
+    monkeypatch.setattr("asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert calls == ["first"]
+    assert "unknown mode" in result.output
 
 
 def test_ask_save_repl_appends(monkeypatch, tmp_path):
