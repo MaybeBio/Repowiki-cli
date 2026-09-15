@@ -36,6 +36,26 @@ repowiki-cli ask facebook/react          # interactive REPL
 full documentation (may be large); `ask` answers a question (single-shot when a
 question is passed, interactive REPL otherwise — type `/exit` to quit).
 
+Reverse backend (`api.devin.ai`) — richer than MCP; enabled by any of these
+flags on `ask`:
+
+```bash
+repowiki-cli ask facebook/react "What is Fiber?" --mode deep      # fast|deep|codemap
+repowiki-cli ask facebook/react "Follow-up?" --id <query-id>      # continue a thread
+repowiki-cli ask facebook/react "What is Fiber?" --mode deep --sources
+repowiki-cli ask facebook/react --mode deep                       # interactive, auto-threads
+```
+
+- `--mode fast|deep|codemap` — engine selection (fast=multihop_faster, deep=agent, codemap=codemap).
+- `--id <query-id>` — reuse a previous query id to continue the conversation thread.
+- `--sources` — append line-numbered source slices for each citation.
+
+The reverse backend also returns source files, line-range citations, and a
+separate summary that MCP drops. `--json` carries all of these
+(`summary`, `references`, `sources`, `stats`, `query_id`). In interactive
+reverse mode, each question continues the previous thread automatically;
+`/new` starts a fresh one.
+
 ### Options
 
 - `contents --page <title>` — print only the page with that title
