@@ -15,7 +15,12 @@ from repowiki.client import (
     ToolError,
     run_async,
 )
-from repowiki.output import format_header, format_result
+from repowiki.output import (
+    filter_page,
+    format_header,
+    format_result,
+    render_markdown,
+)
 from repowiki.repo import normalize_repo
 
 app = typer.Typer(add_completion=False)
@@ -68,6 +73,14 @@ def _mock_text() -> Optional[str]:
     return os.environ.get("REPOWIKI_MOCK_TEXT")
 
 
+def _emit(repo: str, command: str, text: str, rich: bool) -> None:
+    rendered = format_result(repo, command, text)
+    if rich:
+        render_markdown(rendered)
+    else:
+        typer.echo(rendered)
+
+
 @app.command()
 def structure(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
@@ -88,24 +101,33 @@ def structure(
 @app.command()
 def contents(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
+    page: Optional[str] = typer.Option(None, "--page", help="Show only the page with this title"),
+    rich: bool = typer.Option(False, "--rich", help="Render Markdown with rich"),
 ) -> None:
     """Show the full documentation for a repository."""
     resolved = _resolve_repo(repo)
     if (mock := _mock_text()) is not None:
-        typer.echo(format_result(resolved, "contents", mock))
-        return
-    client = DeepWikiClient()
-    try:
-        text = run_async(client.read_wiki_contents(resolved))
-    except Exception as exc:
-        _handle_exception(exc)
-    typer.echo(format_result(resolved, "contents", text))
+        text = mock
+    else:
+        client = DeepWikiClient()
+        try:
+            text = run_async(client.read_wiki_contents(resolved))
+        except Exception as exc:
+            _handle_exception(exc)
+    if page is not None:
+        try:
+            text = filter_page(text, page)
+        except ValueError as exc:
+            typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from exc
+    _emit(resolved, "contents", text, rich)
 
 
 @app.command()
 def ask(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     question: Optional[str] = typer.Argument(None, help="Question (omit for interactive mode)"),
+    rich: bool = typer.Option(False, "--rich", help="Render Markdown with rich"),
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo)
@@ -115,14 +137,14 @@ def ask(
             typer.secho("Error: Question must not be empty.", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=1)
         if (mock := _mock_text()) is not None:
-            typer.echo(format_result(resolved, "ask", mock))
+            _emit(resolved, "ask", mock, rich)
             return
         client = DeepWikiClient()
         try:
             text = run_async(client.ask_question(resolved, question))
         except Exception as exc:
             _handle_exception(exc)
-        typer.echo(format_result(resolved, "ask", text))
+        _emit(resolved, "ask", text, rich)
         return
 
     typer.echo(format_header(resolved, "ask"))
@@ -146,7 +168,10 @@ def ask(
         except Exception as exc:
             _print_error(exc)
             continue
-        typer.echo(answer)
+        if rich:
+            render_markdown(answer)
+        else:
+            typer.echo(answer)
 
 
 def main() -> None:

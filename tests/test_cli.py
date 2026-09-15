@@ -84,3 +84,36 @@ def test_connection_error_returns_exit_1(monkeypatch):
     result = runner.invoke(app, ["structure", "facebook/react"])
     assert result.exit_code == 1
     assert "Could not connect" in result.output
+
+
+def test_contents_page_filter_mock(monkeypatch):
+    sample = "# Page: Overview\n\n# Overview\n\nbody\n\n# Page: Other\n\n# Other\n\nother body"
+    monkeypatch.setenv("REPOWIKI_MOCK_TEXT", sample)
+    result = runner.invoke(app, ["contents", "facebook/react", "--page", "Overview"])
+    assert result.exit_code == 0
+    assert "## DeepWiki: facebook/react (contents)" in result.output
+    assert "body" in result.output
+    assert "other body" not in result.output
+
+
+def test_contents_page_not_found(monkeypatch):
+    monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "# Page: Overview\n\n# Overview\n\nbody")
+    result = runner.invoke(app, ["contents", "facebook/react", "--page", "Missing"])
+    assert result.exit_code == 1
+    assert "Error" in result.output
+    assert "Overview" in result.output
+
+
+def test_contents_rich_mock(monkeypatch):
+    monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "# Hello\n\nsome **bold** text")
+    result = runner.invoke(app, ["contents", "facebook/react", "--rich"])
+    assert result.exit_code == 0
+    assert "Hello" in result.output
+    assert "bold" in result.output
+
+
+def test_ask_rich_mock(monkeypatch):
+    monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "# Answer\n\nsome text")
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--rich"])
+    assert result.exit_code == 0
+    assert "Answer" in result.output
