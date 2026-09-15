@@ -3,7 +3,7 @@ import json
 from typer.testing import CliRunner
 
 from repowiki.client import ConnectionError, ToolError
-from repowiki.cli import _is_retryable, app
+from repowiki.cli import _answer_timeout, _is_retryable, app
 from repowiki.model import Answer, Reference, SourceFile
 
 runner = CliRunner()
@@ -309,7 +309,7 @@ def test_ask_mode_routes_to_devin(monkeypatch):
     captured = {}
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             captured.update(repo=repos[0], question=question, mode=mode, query_id=query_id)
             return Answer(body="devin answer", query_id="q1")
 
@@ -324,7 +324,7 @@ def test_ask_repo_flag_routes_to_devin_and_multi_repo(monkeypatch):
     captured = {}
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             captured["repos"] = repos
             return Answer(body="multi answer", query_id="q1")
 
@@ -342,7 +342,7 @@ def test_ask_context_and_no_summary_route_to_devin(monkeypatch):
     captured = {}
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             captured.update(context=context, generate_summary=generate_summary)
             return Answer(body="ok")
 
@@ -356,7 +356,7 @@ def test_ask_context_alone_routes_to_devin(monkeypatch):
     captured = {}
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             captured.update(context=context, generate_summary=generate_summary)
             return Answer(body="devin answer")
 
@@ -371,7 +371,7 @@ def test_ask_no_summary_alone_routes_to_devin(monkeypatch):
     captured = {}
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             captured.update(context=context, generate_summary=generate_summary)
             return Answer(body="devin answer")
 
@@ -391,7 +391,7 @@ def test_ask_no_flags_still_mcp(monkeypatch):
 
 def test_ask_devin_json(monkeypatch):
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             return Answer(
                 body="devin answer",
                 summary="sum",
@@ -418,7 +418,7 @@ def test_ask_devin_unindexed_exit_2(monkeypatch):
     from repowiki.client import ToolError
 
     class FailingDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             raise ToolError("Devin API returned HTTP 400: Repos not found")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FailingDevin)
@@ -429,7 +429,7 @@ def test_ask_devin_unindexed_exit_2(monkeypatch):
 
 def test_ask_sources_renders_slices(monkeypatch):
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             return Answer(
                 body="body .",
                 references=[Reference("f.py", 1, 2)],
@@ -446,7 +446,7 @@ def test_ask_sources_renders_slices(monkeypatch):
 
 def test_ask_mermaid_outputs_mermaid(monkeypatch):
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             return Answer(body=CODEMAP, query_id="q1")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
@@ -458,7 +458,7 @@ def test_ask_mermaid_outputs_mermaid(monkeypatch):
 
 def test_ask_mermaid_falls_back_when_not_codemap(monkeypatch):
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             return Answer(body="plain prose")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
@@ -470,7 +470,7 @@ def test_ask_mermaid_falls_back_when_not_codemap(monkeypatch):
 
 def test_ask_mermaid_json(monkeypatch):
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             return Answer(body=CODEMAP, query_id="q1")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
@@ -483,7 +483,7 @@ def test_ask_mermaid_json(monkeypatch):
 
 def test_ask_stream_routes_to_devin_and_streams(monkeypatch):
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             if on_chunk:
                 on_chunk("streamed ")
                 on_chunk("answer")
@@ -498,7 +498,7 @@ def test_ask_stream_routes_to_devin_and_streams(monkeypatch):
 
 def test_ask_stream_with_json_ignores_stream(monkeypatch):
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             return Answer(body="plain")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
@@ -514,7 +514,7 @@ def test_ask_repl_devin_auto_threads(monkeypatch):
     seen_qids = []
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             seen_qids.append(query_id)
             if on_chunk:
                 on_chunk(f"answer to {question}")
@@ -535,7 +535,7 @@ def test_ask_repl_devin_new_resets_thread(monkeypatch):
     seen_qids = []
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             seen_qids.append(query_id)
             return Answer(body=f"answer to {question}", query_id=f"qid-{question}")
 
@@ -551,7 +551,7 @@ def test_ask_repl_devin_streams_chunks_then_summary(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             assert on_chunk is not None
             on_chunk("streamed ")
             on_chunk("answer")
@@ -572,8 +572,107 @@ def test_is_retryable():
     assert _is_retryable(ValueError("nope")) is False
 
 
+def test_answer_timeout_defaults(monkeypatch):
+    monkeypatch.delenv("DEEPWIKI_TIMEOUT", raising=False)
+    assert _answer_timeout("fast", None) == 120.0
+    assert _answer_timeout("deep", None) == 300.0
+
+
+def test_answer_timeout_explicit_and_env(monkeypatch):
+    assert _answer_timeout("fast", 55) == 55
+    monkeypatch.setenv("DEEPWIKI_TIMEOUT", "999")
+    assert _answer_timeout("deep", None) == 999.0
+    monkeypatch.setenv("DEEPWIKI_TIMEOUT", "not-a-number")
+    assert _answer_timeout("fast", None) == 120.0
+
+
+def test_ask_timeout_passed_to_devin(monkeypatch):
+    captured = {}
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
+            captured["timeout"] = timeout
+            return Answer(body="ok")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert captured["timeout"] == 300.0
+
+
+def test_ask_timeout_explicit_passed(monkeypatch):
+    captured = {}
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
+            captured["timeout"] = timeout
+            return Answer(body="ok")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "fast", "--timeout", "42"])
+    assert result.exit_code == 0
+    assert captured["timeout"] == 42.0
+
+
+def test_ask_timeout_invalid(monkeypatch):
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep", "--timeout", "0"])
+    assert result.exit_code == 1
+    assert "Error" in result.output
+
+
 async def _no_sleep(delay):
     pass
+
+
+def test_ask_single_shot_retries_connection_error(monkeypatch):
+    calls = []
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
+            calls.append(question)
+            if len(calls) == 1:
+                raise ConnectionError("refused")
+            return Answer(body="recovered", query_id="q1")
+
+    monkeypatch.setattr("asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert calls == ["q?", "q?"]
+    assert "recovered" in result.output
+
+
+def test_ask_single_shot_retries_http_500(monkeypatch):
+    calls = []
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
+            calls.append(question)
+            if len(calls) == 1:
+                raise ToolError("Devin API returned HTTP 500")
+            return Answer(body="recovered", query_id="q1")
+
+    monkeypatch.setattr("asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert calls == ["q?", "q?"]
+    assert "recovered" in result.output
+
+
+def test_ask_single_shot_no_retry_non_transient(monkeypatch):
+    calls = []
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
+            calls.append(question)
+            raise ToolError("Devin API returned HTTP 400: Repos not found")
+
+    monkeypatch.setattr("asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    assert result.exit_code == 2
+    assert calls == ["q?"]
 
 
 def test_ask_repl_retries_connection_error(monkeypatch):
@@ -582,7 +681,7 @@ def test_ask_repl_retries_connection_error(monkeypatch):
     calls = []
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             calls.append(question)
             if len(calls) == 1:
                 raise ConnectionError("refused")
@@ -604,7 +703,7 @@ def test_ask_repl_retries_http_500(monkeypatch):
     calls = []
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             calls.append(question)
             if len(calls) == 1:
                 raise ToolError("Devin API returned HTTP 500")
@@ -626,7 +725,7 @@ def test_ask_repl_no_retry_on_non_transient(monkeypatch):
     calls = []
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             calls.append(question)
             raise ToolError("unknown mode 'bogus'")
 
@@ -645,7 +744,7 @@ def test_ask_repl_falls_back_to_poll(monkeypatch):
     poll_qids = []
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             ask_qids.append(query_id)
             raise ConnectionError("refused")
 
@@ -668,7 +767,7 @@ def test_ask_repl_poll_fallback_failure(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
 
     class FakeDevin:
-        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None):
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
             raise ConnectionError("refused")
 
         async def poll_answer(self, query_id, *, poll_interval=2.0, timeout=120.0):

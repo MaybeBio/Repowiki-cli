@@ -186,22 +186,25 @@ def _run_ask(
     context: str,
     generate_summary: bool,
     on_chunk=None,
+    timeout: float | None = None,
 ) -> Answer:
     if use_devin:
         if (mock := os.environ.get("REPOWIKI_DEVIN_MOCK")) is not None:
             return Answer(body=mock)
-        if on_chunk is not None:
-            return run_async(
-                DevinClient().ask(
-                    repos, question, mode=mode or "fast", query_id=query_id,
-                    context=context, generate_summary=generate_summary,
-                    on_chunk=on_chunk,
-                )
-            )
+        resolved_mode = mode or "fast"
+        resolved_timeout = _answer_timeout(resolved_mode, timeout)
         return run_async(
-            DevinClient().ask(
-                repos, question, mode=mode or "fast", query_id=query_id,
-                context=context, generate_summary=generate_summary,
+            _ask_reverse(
+                DevinClient(),
+                repos,
+                question,
+                mode=resolved_mode,
+                query_id=query_id,
+                context=context,
+                generate_summary=generate_summary,
+                timeout=resolved_timeout,
+                on_chunk=on_chunk,
+                poll_fallback=False,
             )
         )
     if (mock := _mock_text()) is not None:
@@ -302,12 +305,30 @@ _REPL_RETRY_BASE = 1.0
 _REPL_RETRY_JITTER = 0.5
 _REPL_DEFAULT_ATTEMPTS = 4
 
+_DEFAULT_TIMEOUT = 120.0
+_DEEP_TIMEOUT = 300.0
+
 
 def _repl_attempts() -> int:
     raw = os.environ.get("DEEPWIKI_REPL_RETRIES", "")
     if raw.isdigit() and int(raw) > 0:
         return int(raw)
     return _REPL_DEFAULT_ATTEMPTS
+
+
+def _answer_timeout(mode: str, explicit: float | None) -> float:
+    """Resolve the answer timeout: explicit flag, then env, then mode default."""
+    if explicit is not None:
+        return explicit
+    raw = os.environ.get("DEEPWIKI_TIMEOUT", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+        except ValueError:
+            value = -1.0
+        if value > 0:
+            return value
+    return _DEEP_TIMEOUT if mode == "deep" else _DEFAULT_TIMEOUT
 
 
 def _retry_delay(attempt: int) -> float:
@@ -323,7 +344,7 @@ def _is_retryable(exc: Exception) -> bool:
     return False
 
 
-async def _ask_repl(
+async def _ask_reverse(
     devin: DevinClient,
     repos: list[str],
     question: str,
@@ -332,22 +353,29 @@ async def _ask_repl(
     query_id: str | None,
     context: str,
     generate_summary: bool,
+    timeout: float,
+    on_chunk=None,
+    poll_fallback: bool = False,
 ) -> Answer:
-    """Ask with jittered backoff retry, falling back to polling at the end.
+    """Ask the reverse backend with jittered backoff retry.
 
-    Retries only while nothing has streamed yet — once a partial answer has
-    reached the terminal, a dropped connection is reported rather than
-    re-streaming garbled text. After the last failed streaming attempt, the
-    already-submitted query is polled over HTTP instead of re-streaming.
+    Retries transient failures (connection / HTTP 5xx) only while nothing has
+    streamed yet — once a partial answer has reached the terminal, a dropped
+    connection is reported rather than re-streaming garbled text. When
+    ``poll_fallback`` is set, the last failed attempt polls the already-submitted
+    query over HTTP instead of re-streaming.
     """
     qid = query_id or str(uuid4())
     emitted = 0
     attempts = _repl_attempts()
     for attempt in range(attempts):
-        def on_chunk(text: str) -> None:
-            nonlocal emitted
-            emitted += 1
-            _stream_chunk(text)
+        if on_chunk is not None:
+            def wrapped(text: str) -> None:
+                nonlocal emitted
+                emitted += 1
+                on_chunk(text)
+        else:
+            wrapped = None
 
         try:
             return await devin.ask(
@@ -357,21 +385,24 @@ async def _ask_repl(
                 query_id=qid,
                 context=context,
                 generate_summary=generate_summary,
-                on_chunk=on_chunk,
+                timeout=timeout,
+                on_chunk=wrapped,
             )
         except Exception as exc:
             if not _is_retryable(exc) or emitted:
                 raise
             if attempt == attempts - 1:
-                typer.secho(
-                    "Streaming failed; polling for the answer…",
-                    fg=typer.colors.YELLOW,
-                    err=True,
-                )
-                answer = await devin.poll_answer(qid)
-                if answer.body:
-                    _stream_chunk(answer.body)
-                return answer
+                if poll_fallback:
+                    typer.secho(
+                        "Streaming failed; polling for the answer…",
+                        fg=typer.colors.YELLOW,
+                        err=True,
+                    )
+                    answer = await devin.poll_answer(qid, timeout=timeout)
+                    if answer.body and on_chunk is not None:
+                        on_chunk(answer.body)
+                    return answer
+                raise
             delay = _retry_delay(attempt)
             typer.secho(
                 f"Transient error ({_error_message(exc)}); retrying in {delay:.1f}s…",
@@ -379,6 +410,7 @@ async def _ask_repl(
                 err=True,
             )
             await asyncio.sleep(delay)
+    raise ToolError("retries exhausted")
 
 
 async def _repl_devin(
@@ -390,6 +422,7 @@ async def _repl_devin(
     show_sources: bool,
     context: str,
     generate_summary: bool,
+    timeout: float,
 ) -> None:
     prompt = _repl_prompt()
     devin = DevinClient()
@@ -410,9 +443,10 @@ async def _repl_devin(
             typer.echo("(started a new thread)")
             continue
         try:
-            answer = await _ask_repl(
+            answer = await _ask_reverse(
                 devin, repos, q, mode=mode, query_id=last_qid,
                 context=context, generate_summary=generate_summary,
+                timeout=timeout, on_chunk=_stream_chunk, poll_fallback=True,
             )
         except Exception as exc:
             _print_error(exc)
@@ -514,6 +548,10 @@ def ask(
     stream: bool = typer.Option(
         False, "--stream", help="Stream answer chunks as they arrive (reverse backend)",
     ),
+    timeout: Optional[float] = typer.Option(
+        None, "--timeout", help="Answer timeout in seconds (reverse backend). "
+        "Default: 120s, or 300s for --mode deep.",
+    ),
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo, json)
@@ -521,11 +559,14 @@ def ask(
 
     if mode is not None and mode not in ("fast", "deep", "codemap"):
         _fail(f"Invalid --mode: {mode!r} (expected fast, deep, or codemap).", "invalid_input", json)
+    if timeout is not None and timeout <= 0:
+        _fail("--timeout must be a positive number of seconds.", "invalid_input", json)
     all_repos = [resolved] + [_resolve_repo(r, json) for r in (extra_repos or [])]
     use_devin = bool(mode or query_id or sources or extra_repos
                      or (context is not None) or no_summary or stream)
     generate_summary = not no_summary
     context_value = context or ""
+    resolved_timeout = _answer_timeout(mode or "fast", timeout)
 
     if stream and json:
         typer.secho(
@@ -540,11 +581,12 @@ def ask(
         try:
             if stream and not json:
                 answer = _run_ask(all_repos, question, mode, query_id, use_devin,
-                                  context_value, generate_summary, on_chunk=_stream_chunk)
+                                  context_value, generate_summary, on_chunk=_stream_chunk,
+                                  timeout=timeout)
             else:
                 with status("Thinking..."):
                     answer = _run_ask(all_repos, question, mode, query_id, use_devin,
-                                      context_value, generate_summary)
+                                      context_value, generate_summary, timeout=timeout)
         except Exception as exc:
             _handle_exception(exc, json)
         if mermaid:
@@ -587,7 +629,7 @@ def ask(
     try:
         if use_devin:
             run_async(_repl_devin(all_repos, rich, save_path, mode or "fast", query_id,
-                                  sources, context_value, generate_summary))
+                                  sources, context_value, generate_summary, resolved_timeout))
         else:
             run_async(_repl(resolved, rich, save_path))
     except Exception as exc:
