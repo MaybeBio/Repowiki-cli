@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import asdict
 from typing import NoReturn, Optional
 
 import typer
@@ -17,8 +18,11 @@ from repowiki.client import (
     ToolError,
     run_async,
 )
+from repowiki.devin import DevinClient
+from repowiki.model import Answer
 from repowiki.output import (
     filter_page,
+    format_answer,
     format_error_json,
     format_header,
     format_json,
@@ -164,6 +168,53 @@ def _emit(
         typer.echo(rendered)
 
 
+def _run_ask(
+    repo: str,
+    question: str,
+    mode: str | None,
+    query_id: str | None,
+    use_devin: bool,
+) -> Answer:
+    if use_devin:
+        if (mock := os.environ.get("REPOWIKI_DEVIN_MOCK")) is not None:
+            return Answer(body=mock)
+        return run_async(
+            DevinClient().ask(repo, question, mode=mode or "fast", query_id=query_id)
+        )
+    if (mock := _mock_text()) is not None:
+        return Answer(body=mock)
+    return run_async(DeepWikiClient().ask_question(repo, question))
+
+
+def _emit_answer(
+    repo: str,
+    question: str,
+    answer: Answer,
+    rich: bool,
+    json_mode: bool,
+    show_sources: bool,
+) -> None:
+    if json_mode:
+        fields: dict[str, object] = {
+            "question": question,
+            "answer": answer.body,
+            "truncated": answer.truncated,
+        }
+        if answer.summary:
+            fields["summary"] = answer.summary
+        if answer.references:
+            fields["references"] = [asdict(r) for r in answer.references]
+        if answer.sources:
+            fields["sources"] = [asdict(s) for s in answer.sources]
+        if answer.stats:
+            fields["stats"] = answer.stats
+        if answer.query_id:
+            fields["query_id"] = answer.query_id
+        typer.echo(format_json(repo, "ask", **fields))
+        return
+    _emit(repo, "ask", format_answer(answer, show_sources=show_sources), rich, False)
+
+
 def _append_save(path: str | None, repo: str, question: str, answer: str) -> None:
     if path is None:
         return
@@ -266,25 +317,32 @@ def ask(
         help="Save answers to a Markdown file. Bare --save auto-names the file; "
         "--save PATH writes/appends to PATH.",
     ),
+    mode: Optional[str] = typer.Option(
+        None, "--mode", help="Engine: fast, deep, or codemap (reverse backend)",
+    ),
+    query_id: Optional[str] = typer.Option(
+        None, "--id", help="Continue a thread from a previous query id (reverse backend)",
+    ),
+    sources: bool = typer.Option(
+        False, "--sources", help="Show source-code slices for citations (reverse backend)",
+    ),
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo, json)
     save_path = default_save_path(resolved) if save == _SAVE_AUTO else save
 
+    if mode is not None and mode not in ("fast", "deep", "codemap"):
+        _fail(f"Invalid --mode: {mode!r} (expected fast, deep, or codemap).", "invalid_input", json)
+    use_devin = bool(mode or query_id or sources)
+
     if question is not None:
         if not question.strip():
             _fail("Question must not be empty.", "invalid_input", json)
-        if (mock := _mock_text()) is not None:
-            _emit(resolved, "ask", mock, rich, json, question=question, answer=mock)
-            _append_save(save_path, resolved, question, mock)
-            return
-        client = DeepWikiClient()
         try:
-            with status("Thinking..."):
-                answer = run_async(client.ask_question(resolved, question))
+            answer = _run_ask(resolved, question, mode, query_id, use_devin)
         except Exception as exc:
             _handle_exception(exc, json)
-        _emit(resolved, "ask", answer.body, rich, json, question=question, answer=answer.body)
+        _emit_answer(resolved, question, answer, rich, json, sources)
         _append_save(save_path, resolved, question, answer.body)
         return
 

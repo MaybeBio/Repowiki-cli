@@ -3,7 +3,7 @@ import json
 from typer.testing import CliRunner
 
 from repowiki.cli import app
-from repowiki.model import Answer
+from repowiki.model import Answer, Reference, SourceFile
 
 runner = CliRunner()
 
@@ -282,6 +282,70 @@ def test_invalid_repo_json():
     assert result.exit_code == 1
     data = json.loads(result.output)
     assert data["kind"] == "invalid_repo"
+
+
+def test_ask_mode_routes_to_devin(monkeypatch):
+    captured = {}
+
+    class FakeDevin:
+        async def ask(self, repo, question, *, mode="fast", query_id=None):
+            captured.update(repo=repo, question=question, mode=mode, query_id=query_id)
+            return Answer(body="devin answer", query_id="q1")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert captured["mode"] == "deep"
+    assert "devin answer" in result.output
+
+
+def test_ask_no_flags_still_mcp(monkeypatch):
+    monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "mcp answer")
+    result = runner.invoke(app, ["ask", "facebook/react", "q?"])
+    assert result.exit_code == 0
+    assert "mcp answer" in result.output
+
+
+def test_ask_devin_json(monkeypatch):
+    class FakeDevin:
+        async def ask(self, repo, question, *, mode="fast", query_id=None):
+            return Answer(
+                body="devin answer",
+                summary="sum",
+                references=[Reference("f.py", 1, 2)],
+                query_id="q1",
+            )
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["query_id"] == "q1"
+    assert data["summary"] == "sum"
+    assert data["references"] == [{"file_path": "f.py", "range_start": 1, "range_end": 2}]
+
+
+def test_ask_invalid_mode(monkeypatch):
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "bogus"])
+    assert result.exit_code == 1
+    assert "Error" in result.output
+
+
+def test_ask_sources_renders_slices(monkeypatch):
+    class FakeDevin:
+        async def ask(self, repo, question, *, mode="fast", query_id=None):
+            return Answer(
+                body="body .",
+                references=[Reference("f.py", 1, 2)],
+                sources=[SourceFile("a/b", "f.py", "l1\nl2\nl3")],
+            )
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep", "--sources"])
+    assert result.exit_code == 0
+    assert "Sources" in result.output
+    assert "f.py:1-2" in result.output
+    assert "l1" in result.output
 
 
 def test_ask_save_repl_appends(monkeypatch, tmp_path):
