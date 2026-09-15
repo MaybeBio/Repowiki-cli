@@ -80,6 +80,34 @@ class DevinClient:
     def __init__(self, base_url: str | None = None) -> None:
         self.base_url = base_url or os.environ.get("DEEPWIKI_API_URL", DEFAULT_API_URL)
 
+    async def _get_json(self, path: str, *, params: dict | None = None) -> dict:
+        try:
+            async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
+                resp = await client.get(path, params=params)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.TransportError as exc:
+            raise ConnectionError(f"Failed to connect to Devin server: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            raise ToolError(
+                f"Devin API returned HTTP {exc.response.status_code}{_http_detail(exc)}"
+            ) from exc
+
+    async def _post_json(
+        self, path: str, *, params: dict | None = None, json: dict | None = None
+    ) -> dict:
+        try:
+            async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
+                resp = await client.post(path, params=params, json=json)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.TransportError as exc:
+            raise ConnectionError(f"Failed to connect to Devin server: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            raise ToolError(
+                f"Devin API returned HTTP {exc.response.status_code}{_http_detail(exc)}"
+            ) from exc
+
     async def ask(
         self,
         repo: str,
@@ -105,31 +133,19 @@ class DevinClient:
             "attached_context": [],
             "generate_summary": True,
         }
-        query = None
-        try:
-            async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
-                resp = await client.post("/ada/query", json=payload)
-                resp.raise_for_status()
-                deadline = time.monotonic() + timeout
-                while True:
-                    await asyncio.sleep(poll_interval)
-                    resp = await client.get(f"/ada/query/{qid}")
-                    resp.raise_for_status()
-                    queries = resp.json().get("queries")
-                    if not queries:
-                        raise ToolError("Devin API returned no query results")
-                    query = queries[-1]
-                    if query.get("state") in ("done", "error"):
-                        break
-                    if time.monotonic() > deadline:
-                        raise ToolError("timed out waiting for answer")
-        except httpx.TransportError as exc:
-            raise ConnectionError(f"Failed to connect to Devin server: {exc}") from exc
-        except httpx.HTTPStatusError as exc:
-            raise ToolError(
-                f"Devin API returned HTTP {exc.response.status_code}{_http_detail(exc)}"
-            ) from exc
-        assert query is not None
+        await self._post_json("/ada/query", json=payload)
+        deadline = time.monotonic() + timeout
+        while True:
+            await asyncio.sleep(poll_interval)
+            data = await self._get_json(f"/ada/query/{qid}")
+            queries = data.get("queries")
+            if not queries:
+                raise ToolError("Devin API returned no query results")
+            query = queries[-1]
+            if query.get("state") in ("done", "error"):
+                break
+            if time.monotonic() > deadline:
+                raise ToolError("timed out waiting for answer")
         if query.get("error"):
             raise ToolError(str(query["error"]))
         return parse_response(query, qid)

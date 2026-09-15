@@ -87,13 +87,13 @@ class _FakeAsyncClient:
     async def __aexit__(self, *a):
         return None
 
-    async def post(self, url, json=None):
+    async def post(self, url, json=None, params=None):
         self.post_calls.append((url, json))
         if self._post_exc:
             raise self._post_exc
         return _Resp(self._post)
 
-    async def get(self, url):
+    async def get(self, url, params=None):
         self.get_calls.append(url)
         if self._post_exc:
             raise self._post_exc
@@ -182,12 +182,46 @@ async def test_devin_ask_empty_queries(monkeypatch):
             return self
         async def __aexit__(self, *a):
             return None
-        async def post(self, url, json=None):
+        async def post(self, url, json=None, params=None):
             return _Resp({"status": "success"})
-        async def get(self, url):
+        async def get(self, url, params=None):
             self.get_calls += 1
             return _Resp({"queries": []})
 
     monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: _EmptyQueriesClient())
     with pytest.raises(ToolError, match="no query results"):
         await devin_mod.DevinClient().ask("a/b", "q?", poll_interval=0)
+
+
+@pytest.mark.asyncio
+async def test_get_json_passes_params(monkeypatch):
+    captured = {}
+
+    class _Rec:
+        status_code = 200
+        def __init__(self, data):
+            self._data = data
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return self._data
+
+    class _Client:
+        def __init__(self, **kw):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            pass
+        async def get(self, path, params=None):
+            captured["path"] = path
+            captured["params"] = params
+            return _Rec({"ok": True})
+
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", _Client)
+    data = await devin_mod.DevinClient(base_url="https://example.com")._get_json(
+        "/ada/list_public_indexes", params={"search_repo": "react"}
+    )
+    assert data == {"ok": True}
+    assert captured["path"] == "/ada/list_public_indexes"
+    assert captured["params"] == {"search_repo": "react"}
