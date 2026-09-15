@@ -7,8 +7,12 @@ from repowiki.output import (
     _prepare_markdown,
     filter_page,
     format_answer,
+    format_command_json,
     format_header,
+    format_list,
     format_result,
+    format_status,
+    format_warm,
     list_page_titles,
     status,
 )
@@ -116,3 +120,32 @@ def test_format_answer_sources_flag_adds_slices():
     out = format_answer(a, show_sources=True)
     assert "f.py:1-2" in out
     assert "l1" in out and "l2" in out
+
+
+def test_format_list_renders_repos():
+    result = {"indices": [
+        {"repo_name": "facebook/react", "last_modified": "2026-09-12"},
+        {"repo_name": "facebook/react-native", "last_modified": None},
+    ]}
+    out = format_list(result)
+    assert "facebook/react (2026-09-12)" in out
+    assert "facebook/react-native" in out
+
+
+def test_format_list_empty():
+    assert format_list({"indices": []}) == "No matching indexed repos."
+
+
+def test_format_status():
+    assert format_status("a/b", {"status": "completed"}) == "a/b: completed"
+    assert format_status("a/b", {"status": "unknown"}) == "a/b: unknown"
+
+
+def test_format_warm():
+    assert format_warm("a/b", {"status": "OK"}) == "warmed a/b (OK)"
+
+
+def test_format_command_json():
+    import json as _json
+    data = _json.loads(format_command_json("list", search="react", indices=[]))
+    assert data == {"command": "list", "search": "react", "indices": []}

@@ -40,6 +40,11 @@ def format_error_json(kind: str, message: str) -> str:
     return json.dumps({"error": message, "kind": kind}, ensure_ascii=False)
 
 
+def format_command_json(command: str, **fields: object) -> str:
+    """Return a JSON envelope without a repo field (for management commands)."""
+    return json.dumps({"command": command, **fields}, indent=2, ensure_ascii=False)
+
+
 def list_page_titles(text: str) -> list[str]:
     """Return page titles found after each '# Page:' delimiter."""
     return [m.group(1).strip() for m in _PAGE_DELIMITER.finditer(text)]
@@ -145,3 +150,31 @@ def format_answer(answer: Answer, *, show_sources: bool = False) -> str:
     if answer.references:
         parts.append(_format_sources(answer.references, answer.sources, show_sources))
     return "\n\n".join(parts)
+
+
+def format_list(result: dict) -> str:
+    """Render a list_public_indexes result as one line per indexed repo."""
+    indices = result.get("indices") or []
+    if not indices:
+        return "No matching indexed repos."
+    lines = []
+    for entry in indices:
+        repo = entry.get("repo_name", "")
+        bits = []
+        if entry.get("last_modified"):
+            bits.append(entry["last_modified"])
+        if entry.get("language"):
+            bits.append(entry["language"])
+        if entry.get("stargazers_count") is not None:
+            bits.append(f"{entry['stargazers_count']} stars")
+        suffix = f" ({', '.join(bits)})" if bits else ""
+        lines.append(f"- {repo}{suffix}")
+    return "\n".join(lines)
+
+
+def format_status(repo: str, result: dict) -> str:
+    return f"{repo}: {result.get('status', 'unknown')}"
+
+
+def format_warm(repo: str, result: dict) -> str:
+    return f"warmed {repo} ({result.get('status', 'OK')})"
