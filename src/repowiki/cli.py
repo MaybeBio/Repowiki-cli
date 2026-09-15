@@ -257,6 +257,49 @@ async def _repl(resolved: str, rich: bool, save_path: str | None) -> None:
             typer.echo()
 
 
+async def _repl_devin(
+    resolved: str,
+    rich: bool,
+    save_path: str | None,
+    mode: str,
+    initial_query_id: str | None,
+    show_sources: bool,
+) -> None:
+    prompt = _repl_prompt()
+    devin = DevinClient()
+    last_qid = initial_query_id
+    while True:
+        try:
+            line = input(prompt)
+        except (EOFError, KeyboardInterrupt):
+            typer.echo()
+            break
+        q = line.strip()
+        if not q:
+            continue
+        if q in ("/exit", "/quit", "/q"):
+            break
+        if q == "/new":
+            last_qid = None
+            typer.echo("(started a new thread)")
+            continue
+        try:
+            with status("Thinking..."):
+                answer = await devin.ask(resolved, q, mode=mode, query_id=last_qid)
+        except Exception as exc:
+            _print_error(exc)
+            continue
+        last_qid = answer.query_id
+        _append_save(save_path, resolved, q, answer.body)
+        typer.echo()
+        rendered = format_answer(answer, show_sources=show_sources).strip()
+        if rich:
+            render_markdown(rendered)
+        else:
+            typer.echo(rendered)
+        typer.echo()
+
+
 @app.command()
 def structure(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
@@ -354,10 +397,16 @@ def ask(
         )
     typer.echo(format_header(resolved, "ask"))
     typer.echo()
-    typer.echo("Ask a question, or /exit to quit.")
+    hint = "Ask a question, or /exit to quit."
+    if use_devin:
+        hint += "  (/new starts a new thread)"
+    typer.echo(hint)
     typer.echo()
     try:
-        run_async(_repl(resolved, rich, save_path))
+        if use_devin:
+            run_async(_repl_devin(resolved, rich, save_path, mode or "fast", query_id, sources))
+        else:
+            run_async(_repl(resolved, rich, save_path))
     except Exception as exc:
         _handle_exception(exc)
 

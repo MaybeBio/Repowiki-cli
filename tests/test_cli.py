@@ -348,6 +348,40 @@ def test_ask_sources_renders_slices(monkeypatch):
     assert "l1" in result.output
 
 
+def test_ask_repl_devin_auto_threads(monkeypatch):
+    inputs = iter(["first", "second", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    seen_qids = []
+
+    class FakeDevin:
+        async def ask(self, repo, question, *, mode="fast", query_id=None):
+            seen_qids.append(query_id)
+            return Answer(body=f"answer to {question}", query_id=f"qid-{question}")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert seen_qids == [None, "qid-first"]
+    assert "answer to first" in result.output
+    assert "answer to second" in result.output
+
+
+def test_ask_repl_devin_new_resets_thread(monkeypatch):
+    inputs = iter(["first", "/new", "second", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    seen_qids = []
+
+    class FakeDevin:
+        async def ask(self, repo, question, *, mode="fast", query_id=None):
+            seen_qids.append(query_id)
+            return Answer(body=f"answer to {question}", query_id=f"qid-{question}")
+
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    assert result.exit_code == 0
+    assert seen_qids == [None, None]
+
+
 def test_ask_save_repl_appends(monkeypatch, tmp_path):
     inputs = iter(["What is Fiber?", "What are hooks?", "/exit"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
