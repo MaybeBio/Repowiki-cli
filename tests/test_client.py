@@ -144,3 +144,66 @@ async def test_call_tool_surfaces_tool_error_message(monkeypatch):
     client = DeepWikiClient()
     with pytest.raises(ToolError, match="Repository not found"):
         await client._call_tool("read_wiki_structure", {"repoName": "x/y"})
+
+
+@pytest.mark.asyncio
+async def test_call_tool_retries_connection_failure_once(monkeypatch):
+    attempts = {"n": 0}
+
+    @asynccontextmanager
+    async def flaky_streamablehttp(url):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ConnectionRefusedError("Connection refused")
+        yield (object(), object(), object())
+
+    class _FakeSession:
+        async def initialize(self):
+            return None
+
+        async def call_tool(self, tool_name, arguments):
+            return _result(False, ["ok"])
+
+    @asynccontextmanager
+    async def fake_client_session(read, write):
+        yield _FakeSession()
+
+    monkeypatch.setattr(client_mod, "streamablehttp_client", flaky_streamablehttp)
+    monkeypatch.setattr(client_mod, "ClientSession", fake_client_session)
+
+    client = DeepWikiClient()
+    assert await client._call_tool("read_wiki_structure", {"repoName": "x/y"}) == "ok"
+    assert attempts["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_persistent_session_reuses_connection(monkeypatch):
+    state = {"initialized": 0, "calls": 0}
+
+    @asynccontextmanager
+    async def fake_streamablehttp(url):
+        yield (object(), object(), object())
+
+    class _FakeSession:
+        async def initialize(self):
+            state["initialized"] += 1
+
+        async def call_tool(self, tool_name, arguments):
+            state["calls"] += 1
+            return _result(False, [f"answer-{state['calls']}"])
+
+    @asynccontextmanager
+    async def fake_client_session(read, write):
+        yield _FakeSession()
+
+    monkeypatch.setattr(client_mod, "streamablehttp_client", fake_streamablehttp)
+    monkeypatch.setattr(client_mod, "ClientSession", fake_client_session)
+
+    async with DeepWikiClient() as client:
+        first = await client.ask_question("facebook/react", "q1")
+        second = await client.ask_question("facebook/react", "q2")
+
+    assert state["initialized"] == 1
+    assert state["calls"] == 2
+    assert first == "answer-1"
+    assert second == "answer-2"

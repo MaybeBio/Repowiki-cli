@@ -17,8 +17,8 @@ def append_entry(path: str, repo: str, question: str, answer: str) -> None:
     """Append a single Q&A record to *path*, creating parent directories."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     entry = (
-        f"## {repo} · {timestamp}\n\n"
-        f"**Q:** {question}\n\n"
+        f"# {repo} · {timestamp}\n\n"
+        f"> **Q:** {question}\n\n"
         f"{answer.strip()}\n\n"
         f"---\n\n"
     )

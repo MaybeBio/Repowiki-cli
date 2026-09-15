@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from contextlib import contextmanager
@@ -23,6 +24,20 @@ def format_header(repo: str, command: str) -> str:
 def format_result(repo: str, command: str, text: str) -> str:
     """Wrap result text in a Markdown header, trimming surrounding whitespace."""
     return f"{format_header(repo, command)}\n\n{text.strip()}"
+
+
+def format_json(repo: str, command: str, **fields: object) -> str:
+    """Return a machine-readable JSON envelope for a result."""
+    return json.dumps(
+        {"repo": repo, "command": command, **fields},
+        indent=2,
+        ensure_ascii=False,
+    )
+
+
+def format_error_json(kind: str, message: str) -> str:
+    """Return a single-line JSON error object."""
+    return json.dumps({"error": message, "kind": kind}, ensure_ascii=False)
 
 
 def list_page_titles(text: str) -> list[str]:
