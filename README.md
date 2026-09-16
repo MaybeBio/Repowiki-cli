@@ -1,7 +1,7 @@
 # repowiki-cli
 
-Query [DeepWiki](https://deepwiki.com) documentation for any public GitHub
-repository from your terminal.
+Query [DeepWiki](https://deepwiki.com) and [Google Code Wiki](https://codewiki.google)
+documentation for any public GitHub repository from your terminal.
 
 > 中文文档见 [README.zh-CN.md](README.zh-CN.md) · Chinese docs:
 > [README.zh-CN.md](README.zh-CN.md)
@@ -493,6 +493,55 @@ before re-implementing anything:
 If the goal is *generating* a wiki from your own API rather than querying the
 public DeepWiki index, the official CLIs above already solve it — don't
 reinvent the wheel.
+
+## CodeWiki
+
+[Google Code Wiki](https://codewiki.google) is a second wiki service, exposed
+under the `codewiki` namespace. CodeWiki reads **public repositories only** and
+requires **no auth** — it does not support private repos.
+
+```bash
+repowiki-cli codewiki structure REPO [--json]
+repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
+repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save [PATH]]
+```
+
+Quick start:
+
+```bash
+repowiki-cli codewiki structure facebook/react          # table of contents
+repowiki-cli codewiki contents vercel/next.js           # full documentation
+repowiki-cli codewiki ask facebook/react "What is Fiber?"
+```
+
+### `codewiki structure`
+
+Prints the CodeWiki table of contents for a repository.
+
+- `--json` — emit a JSON envelope instead of text.
+
+### `codewiki contents`
+
+Prints the full CodeWiki documentation for a repository, which can be large.
+
+- `--page TITLE` — print only the page whose title matches (case-insensitive
+  exact match). If no page matches, the available titles are listed (to stderr)
+  and the command exits with error kind `page_not_found`.
+- `--rich` — render Markdown with color/formatting via `rich`.
+- `--json` — emit a JSON envelope instead of Markdown.
+
+### `codewiki ask`
+
+```bash
+repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save [PATH]]
+```
+
+`QUESTION` is required — `ask` is single-shot (there is no interactive REPL).
+
+- `--rich` — render the answer's Markdown with `rich`.
+- `--json` — emit a JSON envelope.
+- `--save [PATH]` — save the answer to a Markdown file (see *Saving*). Bare
+  `--save` auto-names the file.
 
 ## Development
 

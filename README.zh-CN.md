@@ -1,6 +1,7 @@
 # repowiki-cli · 仓库 Wiki 查询工具
 
-从终端查询任意公开 GitHub 仓库的 [DeepWiki](https://deepwiki.com) 文档。
+从终端查询任意公开 GitHub 仓库的 [DeepWiki](https://deepwiki.com) 与
+[Google Code Wiki](https://codewiki.google) 文档。
 
 > English docs: [README.md](README.md) · 英文文档见 [README.md](README.md)
 
@@ -457,6 +458,53 @@ claude mcp add -s user -t http deepwiki https://mcp.deepwiki.com/mcp
 
 如果目标是用自己的 API **生成** wiki，而非查询公开的 DeepWiki 索引，上述官方 CLI
 已经解决了这个问题——不必自己造轮子。
+
+## CodeWiki
+
+[Google Code Wiki](https://codewiki.google) 是第二个 wiki 服务，挂在 `codewiki`
+命名空间下。CodeWiki **只读取公开仓库**、**无需鉴权**，不支持私有仓库。
+
+```bash
+repowiki-cli codewiki structure REPO [--json]
+repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
+repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save [PATH]]
+```
+
+快速上手：
+
+```bash
+repowiki-cli codewiki structure facebook/react          # 目录
+repowiki-cli codewiki contents vercel/next.js           # 完整文档
+repowiki-cli codewiki ask facebook/react "What is Fiber?"
+```
+
+### `codewiki structure`
+
+打印仓库的 CodeWiki 文档目录。
+
+- `--json` — 输出 JSON 信封而非文本。
+
+### `codewiki contents`
+
+打印仓库的完整 CodeWiki 文档，可能很大。
+
+- `--page TITLE` — 只打印标题匹配（大小写不敏感的精确匹配）的那一页。若无匹配，
+  会在 stderr 列出可用标题，并以错误类型 `page_not_found` 退出。
+- `--rich` — 用 `rich` 渲染 Markdown（带颜色和格式）。
+- `--json` — 输出 JSON 信封而非 Markdown。
+
+### `codewiki ask`
+
+```bash
+repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save [PATH]]
+```
+
+`QUESTION` 为必填——`ask` 是单次问答（没有交互式 REPL）。
+
+- `--rich` — 用 `rich` 渲染答案的 Markdown。
+- `--json` — 输出 JSON 信封。
+- `--save [PATH]` — 把答案保存为 Markdown 文件（见「保存」）。裸 `--save` 会自动
+  命名文件。
 
 ## 开发
 
