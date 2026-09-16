@@ -83,19 +83,37 @@ def render_structure(wiki: Wiki) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+def _render_section(s: Section) -> str:
+    hashes = "#" * min(max(s.level, 1), 6)
+    parts = [f"{hashes} {s.title}\n"]
+    body = resolve_links(s.markdown)
+    parts.append(body)
+    if body and not body.endswith("\n"):
+        parts.append("\n")
+    for dot in s.diagrams:
+        parts.append(f"\n```dot\n{dot.strip()}\n```\n")
+    parts.append("\n")
+    return "".join(parts)
+
+
 def render_markdown(wiki: Wiki) -> str:
     parts = [f"# {wiki.repo_slug} (commit {wiki.commit_sha})\n"]
     for s in wiki.sections:
-        hashes = "#" * min(max(s.level, 1), 6)
-        parts.append(f"{hashes} {s.title}\n")
-        body = resolve_links(s.markdown)
-        parts.append(body)
-        if body and not body.endswith("\n"):
-            parts.append("\n")
-        for dot in s.diagrams:
-            parts.append(f"\n```dot\n{dot.strip()}\n```\n")
-        parts.append("\n")
+        parts.append(_render_section(s))
     return "".join(parts)
+
+
+def render_page(wiki: Wiki, title: str) -> str:
+    """Render the single section whose title matches (case-insensitive exact).
+
+    Raises ValueError listing available titles if none matches.
+    """
+    target = title.strip().lower()
+    for s in wiki.sections:
+        if s.title.strip().lower() == target:
+            return _render_section(s).strip()
+    available = "\n".join(f"  - {s.title}" for s in wiki.sections) or "  - (none)"
+    raise ValueError(f"Page '{title}' not found. Available pages:\n{available}")
 
 
 def resolve_links(markdown: str) -> str:

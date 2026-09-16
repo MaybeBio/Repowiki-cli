@@ -7,8 +7,12 @@ from typing import NoReturn, Optional
 
 import typer
 
-from repowiki.services.codewiki.client import CodeWikiClient, CodeWikiError
-from repowiki.services.codewiki.wiki import render_markdown, render_structure
+from repowiki.services.codewiki.client import (
+    CodeWikiClient,
+    CodeWikiConnectionError,
+    CodeWikiError,
+)
+from repowiki.services.codewiki.wiki import render_markdown, render_page, render_structure
 from repowiki.shared.async_ import run_async
 from repowiki.shared.model import Answer
 from repowiki.shared.output import (
@@ -21,7 +25,7 @@ from repowiki.shared.output import (
     status,
 )
 from repowiki.shared.repo import normalize_repo
-from repowiki.shared.save import append_entry, default_save_path
+from repowiki.shared.save import append_entry
 
 codewiki_app = typer.Typer(add_completion=False, help="Query Google Code Wiki documentation.")
 
@@ -32,7 +36,7 @@ def register(app: typer.Typer) -> None:
 
 
 def _mock_text() -> Optional[str]:
-    return os.environ.get("REPOWIKI_CODEWIKI_MOCK")
+    return os.environ.get("REPOWIKI_CODEWIKI_MOCK") or None
 
 
 def _resolve_repo(raw: str, json_mode: bool) -> str:
@@ -51,9 +55,10 @@ def _fail(message: str, kind: str, json_mode: bool) -> NoReturn:
 
 
 def _handle_exception(exc: Exception, json_mode: bool) -> NoReturn:
-    if isinstance(exc, CodeWikiError):
-        kind = "connection" if "connect" in str(exc).lower() else "error"
-        _fail(str(exc), kind, json_mode)
+    if isinstance(exc, CodeWikiConnectionError):
+        _fail(str(exc), "connection", json_mode)
+    elif isinstance(exc, CodeWikiError):
+        _fail(str(exc), "error", json_mode)
     _fail(f"Unexpected error: {exc}", "unexpected", json_mode)
 
 
@@ -106,17 +111,20 @@ def contents(
     resolved = _resolve_repo(repo, json)
     if (mock := _mock_text()) is not None:
         text = mock
+        if page is not None:
+            try:
+                text = filter_page(text, page)
+            except ValueError as exc:
+                _fail(str(exc), "page_not_found", json)
     else:
         client = CodeWikiClient()
         try:
             with status("Fetching documentation..."):
                 wiki = run_async(client.read_wiki(resolved))
-            text = render_markdown(wiki)
         except Exception as exc:
             _handle_exception(exc, json)
-    if page is not None:
         try:
-            text = filter_page(text, page)
+            text = render_page(wiki, page) if page is not None else render_markdown(wiki)
         except ValueError as exc:
             _fail(str(exc), "page_not_found", json)
     fields: dict[str, object] = {"content": text}

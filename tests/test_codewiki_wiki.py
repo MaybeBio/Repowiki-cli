@@ -1,9 +1,12 @@
 from pathlib import Path
 
+import pytest
+
 from repowiki.services.codewiki.boq import decode_response
 from repowiki.services.codewiki.wiki import (
     parse,
     render_markdown,
+    render_page,
     render_structure,
     resolve_links,
 )
@@ -67,3 +70,15 @@ def test_resolve_links_resolves_encoded_repo_path():
         resolve_links("[f](%2Fowner%2Frepo%2Ffile.rs)")
         == "[f](https://github.com/owner/repo/file.rs)"
     )
+
+
+def test_render_page_returns_matching_section_only():
+    out = render_page(parse(_payload()), "Section A")
+    assert "## Section A" in out
+    assert "Body of section A" in out
+    assert "Example Overview" not in out
+
+
+def test_render_page_not_found_lists_titles():
+    with pytest.raises(ValueError, match="Section A"):
+        render_page(parse(_payload()), "Nonexistent")

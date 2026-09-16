@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -171,7 +172,13 @@ class CodeWikiClient:
                 content=boq.encode_request(rpc_id, inner_json),
             )
         except httpx.TransportError as exc:
-            raise CodeWikiConnectionError(f"Failed to connect to CodeWiki: {exc}") from exc
+            message = f"Failed to connect to CodeWiki: {exc}"
+            if _is_cert_error(exc):
+                message += (
+                    " (TLS certificate verification failed; set SSL_CERT_FILE to "
+                    "your CA bundle to trust a proxy/mirror)"
+                )
+            raise CodeWikiConnectionError(message) from exc
         if resp.status_code != 200:
             raise CodeWikiError(
                 f"batchexecute returned HTTP {resp.status_code}: {resp.text[:200]}"
@@ -188,3 +195,11 @@ def _github_url(repo: str) -> str:
 
 def _pseudo_reqid() -> int:
     return 100_000 + (int(time.time()) % 900_000)
+
+
+def _is_cert_error(exc: BaseException) -> bool:
+    while exc is not None:
+        if isinstance(exc, ssl.SSLCertVerificationError):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False

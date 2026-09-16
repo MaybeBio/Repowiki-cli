@@ -1,4 +1,5 @@
 import json
+import ssl
 
 import httpx
 import pytest
@@ -46,3 +47,13 @@ def test_read_wiki_builds_batchexecute_request(monkeypatch):
     assert "source-path=%2Fgithub.com%2Fo%2Fr" in seen["url"]
     assert seen["body"].startswith("f.req=")
     assert wiki.repo_slug == "o/r"
+
+
+def test_is_cert_error_detects_ssl_verification():
+    from repowiki.services.codewiki.client import _is_cert_error
+
+    cert = ssl.SSLCertVerificationError(1, "certificate verify failed")
+    exc = httpx.ConnectError("certificate verify failed")
+    exc.__cause__ = cert
+    assert _is_cert_error(exc)
+    assert not _is_cert_error(httpx.ConnectError("connection refused"))
