@@ -113,12 +113,14 @@ alone does **not** switch backends — pair it with `--mode codemap`.
   answer is not a codemap, it warns and falls back to plain text. Paste the
   output into mermaid.live, GitHub, or VS Code to view it.
 - `--stream` — stream answer text chunk-by-chunk over a WebSocket instead of
-  waiting for the full answer, then append the summary and sources. No effect
-  with `--json`.
+  waiting for the full answer, then append the summary and sources. Output is
+  plain text, so `--rich` has no effect. A mid-answer drop falls back to
+  polling. No effect with `--json`.
 - `--timeout SECONDS` — answer timeout for the reverse backend. Defaults to
   `120`, or `300` for `--mode deep`. Overrides `DEEPWIKI_TIMEOUT`.
 - `--save [PATH]` — save each answer to a Markdown file (see *Saving*).
-- `--rich` — render the answer's Markdown with `rich`.
+- `--rich` — render the answer's Markdown with `rich`. No effect with
+  `--stream`.
 - `--json` — emit a JSON envelope. Ignored in interactive mode.
 
 ### `list`

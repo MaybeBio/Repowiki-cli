@@ -101,12 +101,13 @@ repowiki-cli ask REPO [QUESTION] \
 - `--repo REPO` — 可重复；一次对多个仓库提问（位置参数 `repo` + 每个 `--repo`）。
 - `--mermaid` — 把 `codemap` 答案渲染成 Mermaid `flowchart TB`。若答案不是
   codemap，则告警并回退为纯文本。可粘贴到 mermaid.live、GitHub 或 VS Code 查看。
-- `--stream` — 通过 WebSocket 逐字流式输出答案，然后追加摘要和源码。与 `--json`
-  一起使用时无效。
+- `--stream` — 通过 WebSocket 逐字流式输出答案，然后追加摘要和源码。输出为纯
+  文本，因此 `--rich` 无效。答案中途断开会降级为轮询。与 `--json` 一起使用时
+  无效。
 - `--timeout SECONDS` — 逆向后端的回答超时（秒）。默认 `120`，`--mode deep` 为
   `300`。优先级高于 `DEEPWIKI_TIMEOUT`。
 - `--save [PATH]` — 把每个答案保存为 Markdown 文件（见「保存」）。
-- `--rich` — 用 `rich` 渲染答案。
+- `--rich` — 用 `rich` 渲染答案。与 `--stream` 一起使用时无效。
 - `--json` — 输出 JSON 信封；交互模式下忽略。
 
 ### `list`
