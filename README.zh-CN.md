@@ -165,7 +165,7 @@ stats、query_id——`--json` 会全部携带。
 
 ```
 src/repowiki/
-  cli.py      # Typer 命令、路由、REPL、重试/降级
+  cli.py      # Typer 命令、路由、REPL、重试
   client.py   # MCP 后端（DeepWikiClient）+ 错误分类
   devin.py    # 逆向后端（DevinClient）：REST + WebSocket + 轮询
   model.py    # Answer / Reference / SourceFile
@@ -248,11 +248,17 @@ CLI 区分「未索引」和普通工具错误。
 {"error": "Could not connect to DeepWiki server...", "kind": "connection"}
 ```
 
-## 流式、重试与降级
+## 流式、重试与引用
 
 仅适用于**逆向**后端。
 
 **单次 `--stream`** 通过 WebSocket 把 chunk 流式写到 stdout，之后打印摘要/源码尾巴。
+每个 `reference` 事件到达时即输出行内 `[i]` 引用标记，因此流式正文会带上引用，
+与结尾的 `## Sources` 列表一一对应。
+
+**交互式逆向 REPL** 改为轮询每个答案并渲染完整结果，因此行内 `[i]` 引用、摘要和
+源码都能对上。每个追问复用上一个 `query_id`，让服务端保持同一对话线程
+（`/new` 开启新线程）。
 
 **重试。** 单次 `ask` 与交互式 REPL 都会对瞬时故障——`ConnectionError` 或含
 `HTTP 5` 的 `ToolError`——用**带抖动的指数退避**重试：延迟 =
@@ -260,16 +266,18 @@ CLI 区分「未索引」和普通工具错误。
 `DEEPWIKI_REPL_RETRIES` 覆盖。只有在**尚未流式输出任何内容**时才重试——一旦部分
 答案已上屏，连接中断就直接报错，避免重放乱码。
 
-**交互式逆向 REPL** 在此基础上增加了线程接续与轮询降级：
+为什么需要重试：逆向端点是非官方的，偶尔会拒绝 WebSocket 握手（毫秒级的连接
+重置，而非缓慢超时）。退避重试吸收偶发抖动。
 
-1. 每个追问复用上一个 `query_id`，让服务端保持同一对话线程（`/new` 开启新线程）。
-2. 在**最后一次**流式尝试失败时，客户端**降级为轮询**已提交的 query：
-   `GET /ada/query/{query_id}`（`DevinClient.poll_answer`）。因为 `POST` 已经成功，
-   query 在服务端已存在；轮询只是换一条传输通道等它完成。那一问会失去逐字流式，
-   但仍能返回完整答案。
+**引用行号。** 每个引用附带的 `range_start`/`range_end` 是模型估计的，应视为近似
+而非精确：
 
-为什么需要这些：逆向端点是非官方的，偶尔会拒绝 WebSocket 握手（毫秒级的连接
-重置，而非缓慢超时）。退避重试吸收偶发抖动；轮询降级则能从持续的 WS 拒绝中恢复。
+1. **精度问题** — 该区间指向模型把某条论断关联到的*区域*，未必是支撑它的确切行号；
+   可能有偏差。
+2. **版本问题** — 这些行号反映的是 DeepWiki 索引时的快照，可能与你本地 checkout 的
+   代码对不上。
+
+CLI 原样透传这些行号，不做偏移，也不重新解读。
 
 ## 仓库格式
 

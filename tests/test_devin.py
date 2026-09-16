@@ -28,7 +28,7 @@ def test_parse_response_assembles_answer():
         ],
     }
     a = parse_response(query, "qid-1")
-    assert a.body == "Hello world"
+    assert a.body == "Hello world[1]"
     assert a.summary == "A summary"
     assert a.query_id == "qid-1"
     assert len(a.references) == 1
@@ -50,6 +50,41 @@ def test_parse_response_dedupes_sources():
 def test_parse_response_summary_none_when_empty():
     a = parse_response({"response": [_ev("chunk", "body")]}, None)
     assert a.summary is None and a.body == "body"
+
+
+def test_parse_response_inserts_citation_marker_at_reference_position():
+    query = {"response": [
+        _ev("chunk", "see "),
+        _ev("reference", {"file_path": "Repo a/b: f.py", "range_start": 1, "range_end": 2}),
+        _ev("chunk", " for details, and "),
+        _ev("reference", {"file_path": "Repo a/b: g.py", "range_start": 3, "range_end": 4}),
+        _ev("chunk", " for more."),
+    ]}
+    a = parse_response(query, None)
+    assert a.body == "see [1] for details, and [2] for more."
+    assert [r.file_path for r in a.references] == ["Repo a/b: f.py", "Repo a/b: g.py"]
+
+
+def test_parse_response_parses_inline_cite_tags():
+    query = {"response": [
+        _ev("chunk", 'Fiber is defined <cite repo="facebook/react" path="ReactInternalTypes.js" start="87-89" end="89" /> here .'),
+    ]}
+    a = parse_response(query, None)
+    assert a.body == "Fiber is defined [1] here ."
+    assert len(a.references) == 1
+    assert a.references[0].file_path == "ReactInternalTypes.js"
+    assert a.references[0].range_start == 87
+    assert a.references[0].range_end == 89
+
+
+def test_parse_response_cite_single_line_and_ordering():
+    query = {"response": [
+        _ev("chunk", 'A <cite repo="r" path="a.js" start="1-2" end="2" /> and B <cite repo="r" path="b.js" start="3" end="3" />'),
+    ]}
+    a = parse_response(query, None)
+    assert a.body == "A [1] and B [2]"
+    assert [r.file_path for r in a.references] == ["a.js", "b.js"]
+    assert a.references[1].range_start == 3 and a.references[1].range_end == 3
 
 
 class _Resp:
@@ -337,30 +372,6 @@ async def test_get_query_error_field(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_poll_answer_waits_then_parses(monkeypatch):
-    processing = {"state": "processing", "error": None, "response": []}
-    done = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}
-    fake = _MgmtClient([{"queries": [processing]}, {"queries": [done]}])
-    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
-    answer = await devin_mod.DevinClient().poll_answer("qid-1", poll_interval=0)
-    assert answer.body == "hi"
-    assert answer.query_id == "qid-1"
-    assert fake.calls == [
-        ("GET", "/ada/query/qid-1", None),
-        ("GET", "/ada/query/qid-1", None),
-    ]
-
-
-@pytest.mark.asyncio
-async def test_poll_answer_error_field(monkeypatch):
-    q = {"state": "error", "error": "boom", "response": []}
-    fake = _MgmtClient([{"queries": [q]}])
-    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
-    with pytest.raises(ToolError, match="boom"):
-        await devin_mod.DevinClient().poll_answer("qid-1", poll_interval=0)
-
-
-@pytest.mark.asyncio
 async def test_devin_ask_reuses_one_connection(monkeypatch):
     processing = {"state": "processing", "error": None, "response": []}
     done = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}
@@ -418,13 +429,34 @@ async def test_devin_ask_streams_chunks_over_websocket(monkeypatch):
 
     chunks = []
     answer = await devin_mod.DevinClient().ask(["a/b"], "q?", poll_interval=0, on_chunk=chunks.append)
-    assert chunks == ["Hello ", "world", "!"]
-    assert answer.body == "Hello world!"
+    assert chunks == ["Hello ", "world", "!", "[1]"]
+    assert answer.body == "Hello world![1]"
     assert answer.summary == "A summary"
     assert [r.file_path for r in answer.references] == ["Repo a/b: f.py"]
     assert answer.sources == [SourceFile("a/b", "f.py", "line1\nline2\nline3")]
     assert answer.stats == {"load": 0.5}
     assert fake.get_calls == []  # no follow-up GET; the WS delivers the full answer
+
+
+@pytest.mark.asyncio
+async def test_devin_ask_stream_emits_citation_markers(monkeypatch):
+    messages = [
+        _ws_event("chunk", "see "),
+        _ws_event("reference", {"file_path": "Repo a/b: f.py", "range_start": 1, "range_end": 2}),
+        _ws_event("chunk", " and "),
+        _ws_event("reference", {"file_path": "Repo a/b: g.py", "range_start": 3, "range_end": 4}),
+        _ws_event("chunk", " more."),
+        _ws_event("done"),
+    ]
+    fake = _FakeAsyncClient(gets=[])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    monkeypatch.setattr(devin_mod.websockets, "connect", lambda url: _FakeWS(messages))
+
+    chunks = []
+    answer = await devin_mod.DevinClient().ask(["a/b"], "q?", poll_interval=0, on_chunk=chunks.append)
+    assert chunks == ["see ", "[1]", " and ", "[2]", " more."]
+    assert answer.body == "see [1] and [2] more."
+    assert [r.file_path for r in answer.references] == ["Repo a/b: f.py", "Repo a/b: g.py"]
 
 
 @pytest.mark.asyncio

@@ -204,7 +204,6 @@ def _run_ask(
                 generate_summary=generate_summary,
                 timeout=resolved_timeout,
                 on_chunk=on_chunk,
-                poll_fallback=False,
             )
         )
     if (mock := _mock_text()) is not None:
@@ -355,15 +354,12 @@ async def _ask_reverse(
     generate_summary: bool,
     timeout: float,
     on_chunk=None,
-    poll_fallback: bool = False,
 ) -> Answer:
     """Ask the reverse backend with jittered backoff retry.
 
     Retries transient failures (connection / HTTP 5xx) only while nothing has
     streamed yet — once a partial answer has reached the terminal, a dropped
-    connection is reported rather than re-streaming garbled text. When
-    ``poll_fallback`` is set, the last failed attempt polls the already-submitted
-    query over HTTP instead of re-streaming.
+    connection is reported rather than re-streaming garbled text.
     """
     qid = query_id or str(uuid4())
     emitted = 0
@@ -392,16 +388,6 @@ async def _ask_reverse(
             if not _is_retryable(exc) or emitted:
                 raise
             if attempt == attempts - 1:
-                if poll_fallback:
-                    typer.secho(
-                        "Streaming failed; polling for the answer…",
-                        fg=typer.colors.YELLOW,
-                        err=True,
-                    )
-                    answer = await devin.poll_answer(qid, timeout=timeout)
-                    if answer.body and on_chunk is not None:
-                        on_chunk(answer.body)
-                    return answer
                 raise
             delay = _retry_delay(attempt)
             typer.secho(
@@ -443,24 +429,22 @@ async def _repl_devin(
             typer.echo("(started a new thread)")
             continue
         try:
-            answer = await _ask_reverse(
-                devin, repos, q, mode=mode, query_id=last_qid,
-                context=context, generate_summary=generate_summary,
-                timeout=timeout, on_chunk=_stream_chunk, poll_fallback=True,
-            )
+            with status("Thinking..."):
+                answer = await _ask_reverse(
+                    devin, repos, q, mode=mode, query_id=last_qid,
+                    context=context, generate_summary=generate_summary,
+                    timeout=timeout,
+                )
         except Exception as exc:
             _print_error(exc)
             continue
         last_qid = answer.query_id
         _append_save(save_path, repos[0], q, answer.body)
-        tail = format_answer_tail(answer, show_sources=show_sources)
-        if tail:
-            if rich:
-                render_markdown(tail)
-            else:
-                typer.echo(f"\n\n{tail}")
+        rendered = format_answer(answer, show_sources=show_sources)
+        if rich:
+            render_markdown(rendered)
         else:
-            typer.echo()
+            typer.echo(f"\n\n{rendered}")
         typer.echo()
 
 

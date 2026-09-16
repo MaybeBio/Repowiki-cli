@@ -103,24 +103,14 @@ def _clean_path(file_path: str) -> str:
 
 
 def _range_label(path: str, start: int | None, end: int | None) -> str:
-    """Format a path with its line range, omitting the range when absent."""
-    if start is None and end is None:
+    """Format a path with its line range, omitting the range when absent.
+
+    The reverse API uses ``None`` or ``0`` to mean "no specific lines", so
+    either renders as just the path.
+    """
+    if not start and not end:
         return path
     return f"{path}:{start}-{end}"
-
-
-def _fill_citations(body: str, references: list[Reference]) -> str:
-    """Replace i-th ' .' anchor with ' [i].' when counts match; else unchanged."""
-    if not references:
-        return body
-    anchors = list(re.finditer(r" \.", body))
-    if len(anchors) != len(references):
-        return body
-    out = body
-    for i in range(len(anchors) - 1, -1, -1):
-        start, end = anchors[i].span()
-        out = out[:start] + f" [{i + 1}]." + out[end:]
-    return out
 
 
 def _render_slice(ref: Reference, sources: list[SourceFile]) -> str | None:
@@ -129,8 +119,8 @@ def _render_slice(ref: Reference, sources: list[SourceFile]) -> str | None:
     if src is None:
         return None
     lines = src.content.split("\n")
-    start = ref.range_start if ref.range_start is not None else 1
-    end = ref.range_end if ref.range_end is not None else len(lines)
+    start = ref.range_start if ref.range_start else 1
+    end = ref.range_end if ref.range_end else len(lines)
     lo = max(0, start - 1)
     hi = min(len(lines), end)
     numbered = "\n".join(f"{n:4d} {lines[n - 1]}" for n in range(lo + 1, hi + 1))
@@ -151,7 +141,7 @@ def _format_sources(references: list[Reference], sources: list[SourceFile], show
 
 def format_answer(answer: Answer, *, show_sources: bool = False) -> str:
     """Render an Answer as Markdown (no outer header)."""
-    body = _fill_citations(answer.body, answer.references)
+    body = answer.body
     parts = [body.strip()]
     if answer.summary:
         parts.append(f"## Summary\n\n{answer.summary.strip()}")

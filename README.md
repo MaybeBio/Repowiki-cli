@@ -178,7 +178,7 @@ Source layout:
 
 ```
 src/repowiki/
-  cli.py      # Typer commands, routing, REPL, retry/fallback
+  cli.py      # Typer commands, routing, REPL, retry
   client.py   # MCP backend (DeepWikiClient) + error taxonomy
   devin.py    # reverse backend (DevinClient): REST + WebSocket + polling
   model.py    # Answer / Reference / SourceFile
@@ -266,12 +266,19 @@ With `--json`, errors go to **stderr** as a single line:
 {"error": "Could not connect to DeepWiki server...", "kind": "connection"}
 ```
 
-## Streaming, retry, and fallback
+## Streaming, retry, and citations
 
 This applies to the **reverse** backend only.
 
 **Single-shot `--stream`** streams chunks over the WebSocket to stdout, then
-prints the summary/sources tail.
+prints the summary/sources tail. Inline `[i]` citation markers are emitted the
+moment each `reference` event arrives, so the streamed body shows citations that
+line up with the `## Sources` list printed at the end.
+
+**Interactive reverse REPL** polls for each answer and renders the complete
+result, so inline `[i]` citations, the summary, and sources all line up. Each
+follow-up question reuses the previous `query_id`, keeping one conversation
+thread (`/new` starts a fresh thread).
 
 **Retry.** Both single-shot `ask` and the interactive REPL retry transient
 failures — `ConnectionError` or a `ToolError` containing `HTTP 5` — with
@@ -281,20 +288,20 @@ happen only while **nothing has streamed yet** — once a partial answer has
 reached the terminal, a dropped connection is reported instead of re-streaming
 garbled text.
 
-**Interactive reverse REPL** adds threading and poll fallback on top:
-
-1. Each follow-up question reuses the previous `query_id`, so the server keeps
-   one conversation thread (`/new` starts a fresh thread).
-2. On the **last** failed streaming attempt, the client **falls back to
-   polling** the already-submitted query over `GET /ada/query/{query_id}`
-   (`DevinClient.poll_answer`). Because the `POST` already succeeded, the query
-   exists server-side; polling just waits on it over a different transport. That
-   one question loses word-by-word streaming but still returns the full answer.
-
-Why this matters: the reverse endpoint is unofficial and occasionally refuses
+Why retry matters: the reverse endpoint is unofficial and occasionally refuses
 the WebSocket handshake (a millisecond-fast connection reset, not a slow
-timeout). Retry with backoff absorbs one-off blips; the poll fallback recovers
-from persistent WS refusals.
+timeout). Retry with backoff absorbs one-off blips.
+
+**Citation line numbers.** The `range_start`/`range_end` attached to each
+citation are model-estimated, so treat them as approximate rather than exact:
+
+1. **Precision** — the range points at the *region* the model associated with a
+   claim, not necessarily the exact lines that back it; it can be off.
+2. **Version drift** — the numbers reflect whatever snapshot DeepWiki indexed,
+   which may not match your local checkout.
+
+The CLI passes these numbers through unchanged; it does not offset or
+re-interpret them.
 
 ## Repo formats
 

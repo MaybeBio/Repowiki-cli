@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from collections.abc import Callable
 from contextlib import nullcontext
@@ -16,6 +17,35 @@ from websockets.exceptions import ConnectionClosedOK, WebSocketException
 
 from repowiki.client import ConnectionError, ToolError
 from repowiki.model import Answer, Reference, SourceFile
+
+
+_CITE_RE = re.compile(r"<cite\s+([^>]*?)\s*/?>")
+_CITE_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
+
+
+def _parse_cites(body: str) -> tuple[str, list[Reference]]:
+    """Replace inline ``<cite …/>`` tags with ``[i]`` markers, returning references.
+
+    Some responses encode citations as self-closing tags carrying ``path`` and
+    ``start`` (an ``X-Y`` line range) instead of separate ``reference`` events.
+    """
+    references: list[Reference] = []
+
+    def _replace(match: re.Match[str]) -> str:
+        attrs = dict(_CITE_ATTR_RE.findall(match.group(1)))
+        path = attrs.get("path", "")
+        if not path:
+            return match.group(0)
+        parts = attrs.get("start", "").split("-")
+        try:
+            range_start = int(parts[0])
+            range_end = int(parts[1]) if len(parts) > 1 else range_start
+        except (ValueError, IndexError):
+            range_start = range_end = None
+        references.append(Reference(path, range_start, range_end))
+        return f"[{len(references)}]"
+
+    return _CITE_RE.sub(_replace, body), references
 
 
 def parse_response(query: dict, query_id: str | None) -> Answer:
@@ -42,6 +72,7 @@ def parse_response(query: dict, query_id: str | None) -> Answer:
                     range_end=data.get("range_end"),
                 )
             )
+            body.append(f"[{len(references)}]")
         elif kind == "file_contents":
             repo, path, content = data
             key = (repo, path)
@@ -53,8 +84,12 @@ def parse_response(query: dict, query_id: str | None) -> Answer:
         elif kind == "done":
             break
 
+    body_text = "".join(body)
+    if not references and "<cite" in body_text:
+        body_text, references = _parse_cites(body_text)
+
     return Answer(
-        body="".join(body),
+        body=body_text,
         summary="".join(summary) or None,
         references=references,
         sources=sources,
@@ -170,7 +205,11 @@ class DevinClient:
     async def _stream_chunks(
         self, qid: str, on_chunk: Callable[[str], None], *, timeout: float
     ) -> list[dict]:
-        """Stream events over the WebSocket, emitting chunks, until 'done'.
+        """Stream events over the WebSocket, emitting answer text, until 'done'.
+
+        Chunk text and inline citation markers (``[i]`` emitted at each
+        ``reference`` event) are forwarded through ``on_chunk``, so the streamed
+        body shows citations inline and lines up with the final ``## Sources``.
 
         Returns the full event list so the caller can assemble a complete
         Answer (body, summary, references, sources) without a follow-up GET.
@@ -178,6 +217,7 @@ class DevinClient:
         ws_url = f"{self.base_url.replace('http', 'ws', 1)}/ada/ws/query/{qid}"
         deadline = time.monotonic() + timeout
         events: list[dict] = []
+        ref_count = 0
         try:
             async with websockets.connect(ws_url) as ws:
                 while True:
@@ -204,26 +244,12 @@ class DevinClient:
                     events.append(msg)
                     if kind == "chunk":
                         on_chunk(msg.get("data", ""))
+                    elif kind == "reference":
+                        ref_count += 1
+                        on_chunk(f"[{ref_count}]")
         except (OSError, WebSocketException) as exc:
             raise ConnectionError(f"WebSocket connection failed: {exc}") from exc
         return events
-
-    async def poll_answer(
-        self,
-        query_id: str,
-        *,
-        poll_interval: float = 2.0,
-        timeout: float = 120.0,
-    ) -> Answer:
-        """Poll an already-submitted query by id until it completes.
-
-        Fallback for when WebSocket streaming fails: the query was already
-        POSTed, so we wait on the polling endpoint instead of re-submitting.
-        """
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
-            return await self._poll_query(
-                query_id, client=client, poll_interval=poll_interval, timeout=timeout
-            )
 
     async def _poll_query(
         self,

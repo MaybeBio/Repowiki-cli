@@ -84,25 +84,15 @@ def test_format_answer_body_only():
     assert format_answer(Answer(body="  hi  ")) == "hi"
 
 
-def test_format_answer_fills_inline_citations_when_counts_match():
+def test_format_answer_renders_inline_citations_from_body():
     a = Answer(
-        body="Fiber tracks effects .",
+        body="Fiber tracks effects [1].",
         references=[Reference("f.py", 1, 2)],
     )
     out = format_answer(a)
     assert "effects [1]." in out
     assert "## Sources" in out
     assert "1. f.py:1-2" in out
-
-
-def test_format_answer_skips_fill_when_counts_mismatch():
-    a = Answer(
-        body="effects . and more .",
-        references=[Reference("f.py", 1, 2)],  # 2 锚点 1 引用
-    )
-    out = format_answer(a)
-    assert "effects ." in out  # 不填充
-    assert "## Sources" in out
 
 
 def test_format_answer_includes_summary():
@@ -131,6 +121,16 @@ def test_format_answer_none_range_omits_label():
     out = format_answer(a)
     assert "1. f.py" in out
     assert "None-None" not in out
+
+
+def test_format_answer_zero_range_omits_label():
+    a = Answer(
+        body="body .",
+        references=[Reference("Repo a/b: f.py", 0, 0)],
+    )
+    out = format_answer(a)
+    assert "1. f.py" in out
+    assert "0-0" not in out
 
 
 def test_format_answer_none_range_slice_omits_label():
