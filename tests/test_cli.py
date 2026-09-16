@@ -237,7 +237,6 @@ def test_structure_json(monkeypatch):
         "repo": "facebook/react",
         "command": "structure",
         "content": "1. Overview",
-        "truncated": False,
     }
 
 
@@ -250,7 +249,6 @@ def test_ask_single_shot_json(monkeypatch):
         "command": "ask",
         "question": "What is Fiber?",
         "answer": "answer text",
-        "truncated": False,
     }
 
 
@@ -266,7 +264,6 @@ def test_contents_json_with_page(monkeypatch):
     assert data["page"] == "Overview"
     assert "body" in data["content"]
     assert "other body" not in data["content"]
-    assert data["truncated"] is False
 
 
 def test_error_json_connection(monkeypatch):

@@ -12,8 +12,8 @@ def test_answer_defaults_are_independent_instances():
 
 
 def test_answer_explicit_fields():
-    a = Answer(body="b", summary="s", query_id="q", truncated=True)
-    assert (a.body, a.summary, a.query_id, a.truncated) == ("b", "s", "q", True)
+    a = Answer(body="b", summary="s", query_id="q")
+    assert (a.body, a.summary, a.query_id) == ("b", "s", "q")
 
 
 def test_reference_and_source_fields():

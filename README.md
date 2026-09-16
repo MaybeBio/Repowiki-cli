@@ -170,7 +170,6 @@ class Answer:
     sources: list[SourceFile] = []     # {repo, path, content}
     stats: dict[str, float] = {}       # reverse backend only
     query_id: str | None = None        # reverse backend only
-    truncated: bool = False
 ```
 
 The MCP backend produces a bare `Answer(body=...)`. The reverse backend fills in
@@ -326,8 +325,7 @@ Main commands emit an envelope with `repo` and `command`:
   "repo": "facebook/react",
   "command": "ask",
   "question": "What is Fiber?",
-  "answer": "...",
-  "truncated": false
+  "answer": "..."
 }
 ```
 

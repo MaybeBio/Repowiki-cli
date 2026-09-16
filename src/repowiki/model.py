@@ -27,4 +27,3 @@ class Answer:
     sources: list[SourceFile] = field(default_factory=list)
     stats: dict[str, float] = field(default_factory=dict)
     query_id: str | None = None
-    truncated: bool = False

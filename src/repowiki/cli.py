@@ -167,7 +167,6 @@ def _emit(
     **json_fields: object,
 ) -> None:
     if json_mode:
-        json_fields.setdefault("truncated", False)
         typer.echo(format_json(repo, command, **json_fields))
         return
     rendered = format_result(repo, command, text)
@@ -227,7 +226,6 @@ def _emit_streamed_answer(answer: Answer, show_sources: bool) -> None:
 def _answer_json_fields(answer: Answer) -> dict[str, object]:
     fields: dict[str, object] = {
         "answer": answer.body,
-        "truncated": answer.truncated,
     }
     if answer.summary:
         fields["summary"] = answer.summary

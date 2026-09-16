@@ -156,7 +156,6 @@ class Answer:
     sources: list[SourceFile] = []     # {repo, path, content}
     stats: dict[str, float] = {}       # 仅逆向后端
     query_id: str | None = None        # 仅逆向后端
-    truncated: bool = False
 ```
 
 MCP 后端只产生裸的 `Answer(body=...)`；逆向后端补齐 summary、references、sources、
@@ -301,8 +300,7 @@ CLI 原样透传这些行号，不做偏移，也不重新解读。
   "repo": "facebook/react",
   "command": "ask",
   "question": "What is Fiber?",
-  "answer": "...",
-  "truncated": false
+  "answer": "..."
 }
 ```
 
