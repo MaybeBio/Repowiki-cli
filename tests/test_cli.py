@@ -508,6 +508,30 @@ def test_ask_stream_with_json_ignores_stream(monkeypatch):
     assert data["answer"] == "plain"
 
 
+def test_ask_stream_falls_back_to_polling_on_drop(monkeypatch):
+    calls = []
+
+    class FakeDevin:
+        async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):
+            calls.append((on_chunk, query_id))
+            if on_chunk is not None:
+                on_chunk("partial ")
+                raise ConnectionError("refused")
+            return Answer(body="complete answer", summary="sum", query_id=query_id)
+
+    monkeypatch.setattr("asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
+    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--stream"])
+    assert result.exit_code == 0
+    assert "partial " in result.output
+    assert "complete answer" in result.output
+    assert "sum" in result.output
+    assert len(calls) == 2
+    assert calls[0][0] is not None  # first call streamed
+    assert calls[1][0] is None      # fallback polled (no on_chunk)
+    assert calls[0][1] == calls[1][1]  # same query_id reused
+
+
 def test_ask_repl_devin_auto_threads(monkeypatch):
     inputs = iter(["first", "second", "/exit"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))

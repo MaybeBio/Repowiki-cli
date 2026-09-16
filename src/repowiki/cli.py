@@ -558,21 +558,44 @@ def ask(
             fg=typer.colors.YELLOW,
             err=True,
         )
+    if stream and rich:
+        typer.secho(
+            "Warning: --rich has no effect with --stream; the answer streams as plain text.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
     if question is not None:
         if not question.strip():
             _fail("Question must not be empty.", "invalid_input", json)
+        effective_qid = query_id or str(uuid4())
+        streamed = False
         try:
             if stream and not json:
-                answer = _run_ask(all_repos, question, mode, query_id, use_devin,
+                answer = _run_ask(all_repos, question, mode, effective_qid, use_devin,
                                   context_value, generate_summary, on_chunk=_stream_chunk,
                                   timeout=timeout)
+                streamed = True
             else:
                 with status("Thinking..."):
-                    answer = _run_ask(all_repos, question, mode, query_id, use_devin,
+                    answer = _run_ask(all_repos, question, mode, effective_qid, use_devin,
                                       context_value, generate_summary, timeout=timeout)
         except Exception as exc:
-            _handle_exception(exc, json)
+            if stream and not json and _is_retryable(exc):
+                typer.secho(
+                    "\nStream dropped; retrieving the complete answer via polling…",
+                    fg=typer.colors.YELLOW,
+                    err=True,
+                )
+                try:
+                    with status("Thinking..."):
+                        answer = _run_ask(all_repos, question, mode, effective_qid, use_devin,
+                                          context_value, generate_summary, timeout=timeout)
+                except Exception as exc2:
+                    _handle_exception(exc2, json)
+                streamed = False
+            else:
+                _handle_exception(exc, json)
         if mermaid:
             mermaid_text = codemap_to_mermaid(answer.body)
             if mermaid_text is not None:
@@ -590,7 +613,7 @@ def ask(
                 fg=typer.colors.YELLOW,
                 err=True,
             )
-        if stream and not json:
+        if streamed:
             _emit_streamed_answer(answer, sources)
         else:
             _emit_answer(resolved, question, answer, rich, json, sources)

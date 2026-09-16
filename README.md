@@ -284,9 +284,10 @@ thread (`/new` starts a fresh thread).
 failures — `ConnectionError` or a `ToolError` containing `HTTP 5` — with
 **jittered exponential backoff**: delay = `1.0s × 2^attempt + random(0 … 0.5s)`.
 The default is **4 attempts**, overridable with `DEEPWIKI_REPL_RETRIES`. Retries
-happen only while **nothing has streamed yet** — once a partial answer has
-reached the terminal, a dropped connection is reported instead of re-streaming
-garbled text.
+happen only while **nothing has streamed yet**. If a single-shot `--stream`
+drops **mid-answer**, the CLI falls back to polling the same `query_id` and
+re-prints the complete answer (body, citations, summary, sources); the part
+already streamed appears twice, but the answer is never lost.
 
 Why retry matters: the reverse endpoint is unofficial and occasionally refuses
 the WebSocket handshake (a millisecond-fast connection reset, not a slow
