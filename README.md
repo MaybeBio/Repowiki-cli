@@ -40,9 +40,9 @@ uv run repowiki-cli --help
 ## Quick start
 
 ```bash
-repowiki-cli structure facebook/react          # table of contents
-repowiki-cli contents vercel/next.js           # full documentation
-repowiki-cli ask facebook/react "What is Fiber?"
+repowiki-cli deepwiki structure facebook/react          # table of contents
+repowiki-cli deepwiki contents vercel/next.js           # full documentation
+repowiki-cli deepwiki ask facebook/react "What is Fiber?"
 ```
 
 ## Command overview
@@ -62,7 +62,7 @@ repowiki-cli ask facebook/react "What is Fiber?"
 ### `structure`
 
 ```bash
-repowiki-cli structure REPO [--json]
+repowiki-cli deepwiki structure REPO [--json]
 ```
 
 Prints the documentation table of contents (MCP `read_wiki_structure`).
@@ -70,7 +70,7 @@ Prints the documentation table of contents (MCP `read_wiki_structure`).
 ### `contents`
 
 ```bash
-repowiki-cli contents REPO [--page TITLE] [--rich] [--json]
+repowiki-cli deepwiki contents REPO [--page TITLE] [--rich] [--json]
 ```
 
 Prints the full documentation (MCP `read_wiki_contents`), which can be large.
@@ -85,7 +85,7 @@ Prints the full documentation (MCP `read_wiki_contents`), which can be large.
 ### `ask`
 
 ```bash
-repowiki-cli ask REPO [QUESTION] \
+repowiki-cli deepwiki ask REPO [QUESTION] \
   [--rich] [--json] [--save [PATH]] \
   [--mode fast|deep|codemap] [--id QUERY_ID] \
   [--sources] [--no-summary] [--context TEXT] [--repo REPO]... \
@@ -126,7 +126,7 @@ alone does **not** switch backends — pair it with `--mode codemap`.
 ### `list`
 
 ```bash
-repowiki-cli list SEARCH [--json]
+repowiki-cli deepwiki list SEARCH [--json]
 ```
 
 Searches DeepWiki's public index (reverse `list_public_indexes`).
@@ -134,7 +134,7 @@ Searches DeepWiki's public index (reverse `list_public_indexes`).
 ### `status`
 
 ```bash
-repowiki-cli status REPO [--json]
+repowiki-cli deepwiki status REPO [--json]
 ```
 
 Reports a repo's indexing state (reverse `public_repo_indexing_status`).
@@ -143,7 +143,7 @@ Reports a repo's indexing state (reverse `public_repo_indexing_status`).
 ### `warm`
 
 ```bash
-repowiki-cli warm REPO [--json]
+repowiki-cli deepwiki warm REPO [--json]
 ```
 
 Pre-warms a repo's docs cache (reverse `warm_public_repo`).
@@ -151,7 +151,7 @@ Pre-warms a repo's docs cache (reverse `warm_public_repo`).
 ### `get`
 
 ```bash
-repowiki-cli get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
+repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
 ```
 
 Replays a past answer by query id (reverse `get_query`).
@@ -370,89 +370,89 @@ repo unless noted.
 **Read documentation (MCP)**
 
 ```bash
-repowiki-cli structure facebook/react
-repowiki-cli contents vercel/next.js
-repowiki-cli contents vercel/next.js --page "Getting Started"   # one page only
-repowiki-cli contents vercel/next.js --rich                      # rendered
+repowiki-cli deepwiki structure facebook/react
+repowiki-cli deepwiki contents vercel/next.js
+repowiki-cli deepwiki contents vercel/next.js --page "Getting Started"   # one page only
+repowiki-cli deepwiki contents vercel/next.js --rich                      # rendered
 ```
 
 **Ask questions (MCP)**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?"
-repowiki-cli ask facebook/react "What is Fiber?" --rich
-repowiki-cli ask facebook/react                                  # interactive
+repowiki-cli deepwiki ask facebook/react "What is Fiber?"
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --rich
+repowiki-cli deepwiki ask facebook/react                                  # interactive
 ```
 
 **Machine-readable output**
 
 ```bash
-repowiki-cli structure facebook/react --json
-repowiki-cli contents vercel/next.js --json
-repowiki-cli ask facebook/react "What is Fiber?" --json
-repowiki-cli ask facebook/react "What is Fiber?" --json --save out.md   # JSON + Markdown file
+repowiki-cli deepwiki structure facebook/react --json
+repowiki-cli deepwiki contents vercel/next.js --json
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --json
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --json --save out.md   # JSON + Markdown file
 ```
 
 **Save answers to files**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?" --save            # auto-named
-repowiki-cli ask facebook/react "What is Fiber?" --save notes/answers.md
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --save            # auto-named
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --save notes/answers.md
 ```
 
 **Reverse backend — engine and depth**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep
-repowiki-cli ask facebook/react "Quick facts?" --mode fast
-repowiki-cli ask facebook/react "Show the data flow" --mode codemap --mermaid
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --mode deep
+repowiki-cli deepwiki ask facebook/react "Quick facts?" --mode fast
+repowiki-cli deepwiki ask facebook/react "Show the data flow" --mode codemap --mermaid
 ```
 
 **Reverse backend — sources and summary**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep --sources
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep --no-summary
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --mode deep --sources
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --mode deep --no-summary
 ```
 
 **Reverse backend — streaming and context**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep --stream
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep --context "answer in Chinese"
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --mode deep --stream
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --mode deep --context "answer in Chinese"
 ```
 
 **Reverse backend — timeout**
 
 ```bash
-repowiki-cli ask facebook/react "Deep dive?" --mode deep --timeout 600   # allow 10 min for deep answers
-repowiki-cli ask facebook/react "Quick facts?" --mode fast --timeout 30
-DEEPWIKI_TIMEOUT=600 repowiki-cli ask facebook/react "Deep dive?" --mode deep   # or via env var
+repowiki-cli deepwiki ask facebook/react "Deep dive?" --mode deep --timeout 600   # allow 10 min for deep answers
+repowiki-cli deepwiki ask facebook/react "Quick facts?" --mode fast --timeout 30
+DEEPWIKI_TIMEOUT=600 repowiki-cli deepwiki ask facebook/react "Deep dive?" --mode deep   # or via env var
 ```
 
 **Reverse backend — threads and multi-repo**
 
 ```bash
-repowiki-cli ask facebook/react "Follow-up?" --id <query-id>      # continue a thread
-repowiki-cli ask facebook/react "diff?" --repo remix-run/react-router --repo TanStack/router
-repowiki-cli ask facebook/react --mode deep                        # interactive, auto-threads
+repowiki-cli deepwiki ask facebook/react "Follow-up?" --id <query-id>      # continue a thread
+repowiki-cli deepwiki ask facebook/react "diff?" --repo remix-run/react-router --repo TanStack/router
+repowiki-cli deepwiki ask facebook/react --mode deep                        # interactive, auto-threads
 ```
 
 **Management**
 
 ```bash
-repowiki-cli list react
-repowiki-cli status facebook/react
-repowiki-cli warm facebook/react
-repowiki-cli get <query-id>
-repowiki-cli get <query-id> --sources
-repowiki-cli get <query-id> --mermaid
+repowiki-cli deepwiki list react
+repowiki-cli deepwiki status facebook/react
+repowiki-cli deepwiki warm facebook/react
+repowiki-cli deepwiki get <query-id>
+repowiki-cli deepwiki get <query-id> --sources
+repowiki-cli deepwiki get <query-id> --mermaid
 ```
 
 **Scripting with exit codes**
 
 ```bash
-repowiki-cli ask some/repo "q?" --json > out.json
+repowiki-cli deepwiki ask some/repo "q?" --json > out.json
 case $? in
   0) ;;                       # success
   2) echo "not indexed" ;;

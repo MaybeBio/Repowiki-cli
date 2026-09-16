@@ -43,6 +43,7 @@ from repowiki.repo import normalize_repo
 from repowiki.save import append_entry, default_save_path
 
 app = typer.Typer(add_completion=False)
+deepwiki_app = typer.Typer(add_completion=False, help="Query DeepWiki documentation.")
 
 # Sentinel injected into argv for a bare ``--save`` (no value). ``save`` then
 # resolves to an auto-generated filename instead of an explicit path.
@@ -446,7 +447,7 @@ async def _repl_devin(
         typer.echo()
 
 
-@app.command()
+@deepwiki_app.command()
 def structure(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
@@ -465,7 +466,7 @@ def structure(
     _emit(resolved, "structure", text, False, json, content=text)
 
 
-@app.command()
+@deepwiki_app.command()
 def contents(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     page: Optional[str] = typer.Option(None, "--page", help="Show only the page with this title"),
@@ -494,7 +495,7 @@ def contents(
     _emit(resolved, "contents", text, rich, json, **fields)
 
 
-@app.command(cls=_AskCommand)
+@deepwiki_app.command(cls=_AskCommand)
 def ask(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     question: Optional[str] = typer.Argument(None, help="Question (omit for interactive mode)"),
@@ -641,7 +642,7 @@ def ask(
         _handle_exception(exc)
 
 
-@app.command("list")
+@deepwiki_app.command("list")
 def list_indexes(
     search: str = typer.Argument(..., help="Search term for indexed repos"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
@@ -668,7 +669,7 @@ def list_indexes(
 # spinner contextmanager from ``repowiki.output`` is referenced by every other
 # command; a function named ``status`` would shadow it. The CLI name stays
 # ``status`` via the explicit decorator argument, mirroring ``list``.
-@app.command("status")
+@deepwiki_app.command("status")
 def status_cmd(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
@@ -687,7 +688,7 @@ def status_cmd(
     typer.echo(format_status(resolved, result))
 
 
-@app.command()
+@deepwiki_app.command()
 def warm(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
@@ -706,7 +707,7 @@ def warm(
     typer.echo(format_warm(resolved, result))
 
 
-@app.command()
+@deepwiki_app.command()
 def get(
     query_id: str = typer.Argument(..., help="Query id to retrieve"),
     rich: bool = typer.Option(False, "--rich", help="Render Markdown with rich"),
@@ -747,6 +748,9 @@ def get(
         render_markdown(rendered)
     else:
         typer.echo(rendered)
+
+
+app.add_typer(deepwiki_app, name="deepwiki")
 
 
 def main() -> None:

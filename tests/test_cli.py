@@ -31,7 +31,7 @@ CODEMAP = json.dumps({
 
 def test_structure_command_mock(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "1. Overview")
-    result = runner.invoke(app, ["structure", "facebook/react"])
+    result = runner.invoke(app, ["deepwiki", "structure", "facebook/react"])
     assert result.exit_code == 0
     assert "## DeepWiki: facebook/react (structure)" in result.output
     assert "1. Overview" in result.output
@@ -39,7 +39,7 @@ def test_structure_command_mock(monkeypatch):
 
 def test_ask_single_shot_mock(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "answer text")
-    result = runner.invoke(app, ["ask", "facebook/react", "What is Fiber?"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "What is Fiber?"])
     assert result.exit_code == 0
     assert "## DeepWiki: facebook/react (ask)" in result.output
     assert "answer text" in result.output
@@ -47,19 +47,19 @@ def test_ask_single_shot_mock(monkeypatch):
 
 def test_ask_accepts_url(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "answer")
-    result = runner.invoke(app, ["ask", "https://github.com/facebook/react", "q?"])
+    result = runner.invoke(app, ["deepwiki", "ask", "https://github.com/facebook/react", "q?"])
     assert result.exit_code == 0
     assert "## DeepWiki: facebook/react (ask)" in result.output
 
 
 def test_invalid_repo():
-    result = runner.invoke(app, ["structure", "facebook"])
+    result = runner.invoke(app, ["deepwiki", "structure", "facebook"])
     assert result.exit_code == 1
     assert "Error" in result.output
 
 
 def test_empty_question_errors():
-    result = runner.invoke(app, ["ask", "facebook/react", ""])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", ""])
     assert result.exit_code == 1
     assert "Error" in result.output
 
@@ -85,7 +85,7 @@ def test_ask_repl(monkeypatch):
             return Answer(body=f"answer to {question}")
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FakeClient)
-    result = runner.invoke(app, ["ask", "facebook/react"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react"])
     assert result.exit_code == 0
     assert "answer to What is Fiber?" in result.output
 
@@ -111,7 +111,7 @@ def test_ask_repl_uses_prominent_marker(monkeypatch):
             return Answer(body=f"answer to {question}")
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FakeClient)
-    result = runner.invoke(app, ["ask", "facebook/react"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react"])
     assert result.exit_code == 0
     assert prompts
     assert all(">>" in p for p in prompts)
@@ -125,7 +125,7 @@ def test_tool_error_returns_exit_1(monkeypatch):
             raise ToolError("Tool 'read_wiki_structure' failed: boom")
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FailingClient)
-    result = runner.invoke(app, ["structure", "facebook/react"])
+    result = runner.invoke(app, ["deepwiki", "structure", "facebook/react"])
     assert result.exit_code == 1
     assert "Error" in result.output
 
@@ -138,7 +138,7 @@ def test_connection_error_returns_exit_3(monkeypatch):
             raise ConnectionError("Failed to connect to DeepWiki server")
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FailingClient)
-    result = runner.invoke(app, ["structure", "facebook/react"])
+    result = runner.invoke(app, ["deepwiki", "structure", "facebook/react"])
     assert result.exit_code == 3
     assert "Could not connect" in result.output
 
@@ -151,7 +151,7 @@ def test_not_indexed_returns_exit_2(monkeypatch):
             raise ToolError("Tool 'read_wiki_structure' failed: repo not indexed")
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FailingClient)
-    result = runner.invoke(app, ["structure", "facebook/react"])
+    result = runner.invoke(app, ["deepwiki", "structure", "facebook/react"])
     assert result.exit_code == 2
     assert "not indexed" in result.output
 
@@ -168,7 +168,7 @@ def test_not_indexed_real_deepwiki_phrasing(monkeypatch):
             )
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FailingClient)
-    result = runner.invoke(app, ["structure", "MaybeBio/pyPaperFlow", "--json"])
+    result = runner.invoke(app, ["deepwiki", "structure", "MaybeBio/pyPaperFlow", "--json"])
     assert result.exit_code == 2
     data = json.loads(result.output)
     assert data["kind"] == "not_indexed"
@@ -177,7 +177,7 @@ def test_not_indexed_real_deepwiki_phrasing(monkeypatch):
 def test_contents_page_filter_mock(monkeypatch):
     sample = "# Page: Overview\n\n# Overview\n\nbody\n\n# Page: Other\n\n# Other\n\nother body"
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", sample)
-    result = runner.invoke(app, ["contents", "facebook/react", "--page", "Overview"])
+    result = runner.invoke(app, ["deepwiki", "contents", "facebook/react", "--page", "Overview"])
     assert result.exit_code == 0
     assert "## DeepWiki: facebook/react (contents)" in result.output
     assert "body" in result.output
@@ -186,7 +186,7 @@ def test_contents_page_filter_mock(monkeypatch):
 
 def test_contents_page_not_found(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "# Page: Overview\n\n# Overview\n\nbody")
-    result = runner.invoke(app, ["contents", "facebook/react", "--page", "Missing"])
+    result = runner.invoke(app, ["deepwiki", "contents", "facebook/react", "--page", "Missing"])
     assert result.exit_code == 1
     assert "Error" in result.output
     assert "Overview" in result.output
@@ -194,7 +194,7 @@ def test_contents_page_not_found(monkeypatch):
 
 def test_contents_rich_mock(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "# Hello\n\nsome **bold** text")
-    result = runner.invoke(app, ["contents", "facebook/react", "--rich"])
+    result = runner.invoke(app, ["deepwiki", "contents", "facebook/react", "--rich"])
     assert result.exit_code == 0
     assert "Hello" in result.output
     assert "bold" in result.output
@@ -202,7 +202,7 @@ def test_contents_rich_mock(monkeypatch):
 
 def test_ask_rich_mock(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "# Answer\n\nsome text")
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--rich"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--rich"])
     assert result.exit_code == 0
     assert "Answer" in result.output
 
@@ -211,7 +211,7 @@ def test_ask_save_explicit_path(monkeypatch, tmp_path):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "the answer")
     out = tmp_path / "qa.md"
     result = runner.invoke(
-        app, ["ask", "facebook/react", "what is fiber?", "--save", str(out)]
+        app, ["deepwiki", "ask", "facebook/react", "what is fiber?", "--save", str(out)]
     )
     assert result.exit_code == 0
     text = out.read_text()
@@ -222,7 +222,7 @@ def test_ask_save_explicit_path(monkeypatch, tmp_path):
 def test_ask_save_bare_auto_names(monkeypatch, tmp_path):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "the answer")
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["ask", "facebook/react", "what is fiber?", "--save"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "what is fiber?", "--save"])
     assert result.exit_code == 0
     files = list(tmp_path.glob("repowiki-facebook-react_*.md"))
     assert len(files) == 1
@@ -231,7 +231,7 @@ def test_ask_save_bare_auto_names(monkeypatch, tmp_path):
 
 def test_structure_json(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "1. Overview")
-    result = runner.invoke(app, ["structure", "facebook/react", "--json"])
+    result = runner.invoke(app, ["deepwiki", "structure", "facebook/react", "--json"])
     assert result.exit_code == 0
     assert json.loads(result.output) == {
         "repo": "facebook/react",
@@ -242,7 +242,7 @@ def test_structure_json(monkeypatch):
 
 def test_ask_single_shot_json(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "answer text")
-    result = runner.invoke(app, ["ask", "facebook/react", "What is Fiber?", "--json"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "What is Fiber?", "--json"])
     assert result.exit_code == 0
     assert json.loads(result.output) == {
         "repo": "facebook/react",
@@ -256,7 +256,7 @@ def test_contents_json_with_page(monkeypatch):
     sample = "# Page: Overview\n\n# Overview\n\nbody\n\n# Page: Other\n\n# Other\n\nother body"
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", sample)
     result = runner.invoke(
-        app, ["contents", "facebook/react", "--page", "Overview", "--json"]
+        app, ["deepwiki", "contents", "facebook/react", "--page", "Overview", "--json"]
     )
     assert result.exit_code == 0
     data = json.loads(result.output)
@@ -274,7 +274,7 @@ def test_error_json_connection(monkeypatch):
             raise ConnectionError("Failed to connect to DeepWiki server")
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FailingClient)
-    result = runner.invoke(app, ["structure", "facebook/react", "--json"])
+    result = runner.invoke(app, ["deepwiki", "structure", "facebook/react", "--json"])
     assert result.exit_code == 3
     data = json.loads(result.output)
     assert data["kind"] == "connection"
@@ -289,14 +289,14 @@ def test_error_json_not_indexed(monkeypatch):
             raise ToolError("Tool 'read_wiki_structure' failed: repo not indexed")
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FailingClient)
-    result = runner.invoke(app, ["structure", "facebook/react", "--json"])
+    result = runner.invoke(app, ["deepwiki", "structure", "facebook/react", "--json"])
     assert result.exit_code == 2
     data = json.loads(result.output)
     assert data["kind"] == "not_indexed"
 
 
 def test_invalid_repo_json():
-    result = runner.invoke(app, ["structure", "facebook", "--json"])
+    result = runner.invoke(app, ["deepwiki", "structure", "facebook", "--json"])
     assert result.exit_code == 1
     data = json.loads(result.output)
     assert data["kind"] == "invalid_repo"
@@ -311,7 +311,7 @@ def test_ask_mode_routes_to_devin(monkeypatch):
             return Answer(body="devin answer", query_id="q1")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "deep"])
     assert result.exit_code == 0
     assert captured["mode"] == "deep"
     assert "devin answer" in result.output
@@ -328,7 +328,7 @@ def test_ask_repo_flag_routes_to_devin_and_multi_repo(monkeypatch):
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
     result = runner.invoke(
         app,
-        ["ask", "facebook/react", "diff?", "--repo", "remix-run/react-router", "--repo", "TanStack/router"],
+        ["deepwiki", "ask", "facebook/react", "diff?", "--repo", "remix-run/react-router", "--repo", "TanStack/router"],
     )
     assert result.exit_code == 0
     assert captured["repos"] == ["facebook/react", "remix-run/react-router", "TanStack/router"]
@@ -344,7 +344,7 @@ def test_ask_context_and_no_summary_route_to_devin(monkeypatch):
             return Answer(body="ok")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--context", "in Chinese", "--no-summary"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--context", "in Chinese", "--no-summary"])
     assert result.exit_code == 0
     assert captured == {"context": "in Chinese", "generate_summary": False}
 
@@ -358,7 +358,7 @@ def test_ask_context_alone_routes_to_devin(monkeypatch):
             return Answer(body="devin answer")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--context", "ctx"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--context", "ctx"])
     assert result.exit_code == 0
     assert captured == {"context": "ctx", "generate_summary": True}
     assert "devin answer" in result.output
@@ -373,7 +373,7 @@ def test_ask_no_summary_alone_routes_to_devin(monkeypatch):
             return Answer(body="devin answer")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--no-summary"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--no-summary"])
     assert result.exit_code == 0
     assert captured == {"context": "", "generate_summary": False}
     assert "devin answer" in result.output
@@ -381,7 +381,7 @@ def test_ask_no_summary_alone_routes_to_devin(monkeypatch):
 
 def test_ask_no_flags_still_mcp(monkeypatch):
     monkeypatch.setenv("REPOWIKI_MOCK_TEXT", "mcp answer")
-    result = runner.invoke(app, ["ask", "facebook/react", "q?"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?"])
     assert result.exit_code == 0
     assert "mcp answer" in result.output
 
@@ -397,7 +397,7 @@ def test_ask_devin_json(monkeypatch):
             )
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep", "--json"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "deep", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["query_id"] == "q1"
@@ -406,7 +406,7 @@ def test_ask_devin_json(monkeypatch):
 
 
 def test_ask_invalid_mode(monkeypatch):
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "bogus"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "bogus"])
     assert result.exit_code == 1
     assert "Error" in result.output
 
@@ -419,7 +419,7 @@ def test_ask_devin_unindexed_exit_2(monkeypatch):
             raise ToolError("Devin API returned HTTP 400: Repos not found")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FailingDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "deep"])
     assert result.exit_code == 2
     assert "Repos not found" in result.output
 
@@ -434,7 +434,7 @@ def test_ask_sources_renders_slices(monkeypatch):
             )
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep", "--sources"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "deep", "--sources"])
     assert result.exit_code == 0
     assert "Sources" in result.output
     assert "f.py:1-2" in result.output
@@ -447,7 +447,7 @@ def test_ask_mermaid_outputs_mermaid(monkeypatch):
             return Answer(body=CODEMAP, query_id="q1")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "codemap", "--mermaid"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "codemap", "--mermaid"])
     assert result.exit_code == 0
     assert "flowchart TB" in result.output
     assert '"traces"' not in result.output
@@ -459,7 +459,7 @@ def test_ask_mermaid_falls_back_when_not_codemap(monkeypatch):
             return Answer(body="plain prose")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "codemap", "--mermaid"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "codemap", "--mermaid"])
     assert result.exit_code == 0
     assert "not a codemap" in result.output
     assert "plain prose" in result.output
@@ -471,7 +471,7 @@ def test_ask_mermaid_json(monkeypatch):
             return Answer(body=CODEMAP, query_id="q1")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "codemap", "--mermaid", "--json"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "codemap", "--mermaid", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["mermaid"].startswith("flowchart TB")
@@ -487,7 +487,7 @@ def test_ask_stream_routes_to_devin_and_streams(monkeypatch):
             return Answer(body="streamed answer", summary="a summary")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--stream"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--stream"])
     assert result.exit_code == 0
     assert "streamed answer" in result.output
     assert "a summary" in result.output
@@ -499,7 +499,7 @@ def test_ask_stream_with_json_ignores_stream(monkeypatch):
             return Answer(body="plain")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--stream", "--json"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--stream", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data["answer"] == "plain"
@@ -518,7 +518,7 @@ def test_ask_stream_falls_back_to_polling_on_drop(monkeypatch):
 
     monkeypatch.setattr("asyncio.sleep", _no_sleep)
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--stream"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--stream"])
     assert result.exit_code == 0
     assert "partial " in result.output
     assert "complete answer" in result.output
@@ -542,7 +542,7 @@ def test_ask_repl_devin_auto_threads(monkeypatch):
             return Answer(body=f"answer to {question}", query_id=f"qid-{question}")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "--mode", "deep"])
     assert result.exit_code == 0
     assert seen_qids[0] is not None
     assert seen_qids[1] == "qid-first"
@@ -561,7 +561,7 @@ def test_ask_repl_devin_new_resets_thread(monkeypatch):
             return Answer(body=f"answer to {question}", query_id=f"qid-{question}")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "--mode", "deep"])
     assert result.exit_code == 0
     assert seen_qids[0] is not None and seen_qids[1] is not None
     assert seen_qids[0] != seen_qids[1]
@@ -582,7 +582,7 @@ def test_ask_repl_devin_renders_full_answer_with_citations(monkeypatch):
             )
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "--mode", "deep"])
     assert result.exit_code == 0
     assert "effects [1]." in result.stdout
     assert "a summary" in result.stdout
@@ -620,7 +620,7 @@ def test_ask_timeout_passed_to_devin(monkeypatch):
             return Answer(body="ok")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "deep"])
     assert result.exit_code == 0
     assert captured["timeout"] == 300.0
 
@@ -634,13 +634,13 @@ def test_ask_timeout_explicit_passed(monkeypatch):
             return Answer(body="ok")
 
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "fast", "--timeout", "42"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "fast", "--timeout", "42"])
     assert result.exit_code == 0
     assert captured["timeout"] == 42.0
 
 
 def test_ask_timeout_invalid(monkeypatch):
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep", "--timeout", "0"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "deep", "--timeout", "0"])
     assert result.exit_code == 1
     assert "Error" in result.output
 
@@ -661,7 +661,7 @@ def test_ask_single_shot_retries_connection_error(monkeypatch):
 
     monkeypatch.setattr("asyncio.sleep", _no_sleep)
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "deep"])
     assert result.exit_code == 0
     assert calls == ["q?", "q?"]
     assert "recovered" in result.output
@@ -679,7 +679,7 @@ def test_ask_single_shot_retries_http_500(monkeypatch):
 
     monkeypatch.setattr("asyncio.sleep", _no_sleep)
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "deep"])
     assert result.exit_code == 0
     assert calls == ["q?", "q?"]
     assert "recovered" in result.output
@@ -695,7 +695,7 @@ def test_ask_single_shot_no_retry_non_transient(monkeypatch):
 
     monkeypatch.setattr("asyncio.sleep", _no_sleep)
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "q?", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "q?", "--mode", "deep"])
     assert result.exit_code == 2
     assert calls == ["q?"]
 
@@ -716,7 +716,7 @@ def test_ask_repl_retries_connection_error(monkeypatch):
 
     monkeypatch.setattr("asyncio.sleep", _no_sleep)
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "--mode", "deep"])
     assert result.exit_code == 0
     assert calls == ["first", "first"]
     assert "recovered" in result.stdout
@@ -738,7 +738,7 @@ def test_ask_repl_retries_http_500(monkeypatch):
 
     monkeypatch.setattr("asyncio.sleep", _no_sleep)
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "--mode", "deep"])
     assert result.exit_code == 0
     assert calls == ["first", "first"]
     assert "recovered" in result.stdout
@@ -756,7 +756,7 @@ def test_ask_repl_no_retry_on_non_transient(monkeypatch):
 
     monkeypatch.setattr("asyncio.sleep", _no_sleep)
     monkeypatch.setattr("repowiki.cli.DevinClient", FakeDevin)
-    result = runner.invoke(app, ["ask", "facebook/react", "--mode", "deep"])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "--mode", "deep"])
     assert result.exit_code == 0
     assert calls == ["first"]
     assert "unknown mode" in result.output
@@ -778,7 +778,7 @@ def test_ask_save_repl_appends(monkeypatch, tmp_path):
 
     monkeypatch.setattr("repowiki.cli.DeepWikiClient", FakeClient)
     out = tmp_path / "qa.md"
-    result = runner.invoke(app, ["ask", "facebook/react", "--save", str(out)])
+    result = runner.invoke(app, ["deepwiki", "ask", "facebook/react", "--save", str(out)])
     assert result.exit_code == 0
     text = out.read_text()
     assert text.count("**Q:**") == 2
@@ -804,7 +804,7 @@ def test_list_command(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"list_public_indexes": {"indices": [{"repo_name": "facebook/react", "last_modified": "2026-09-12"}]}}),
     )
-    result = runner.invoke(app, ["list", "react"])
+    result = runner.invoke(app, ["deepwiki", "list", "react"])
     assert result.exit_code == 0
     assert "facebook/react" in result.output
 
@@ -814,7 +814,7 @@ def test_list_command_json(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"list_public_indexes": {"indices": [], "needs_reindex": [], "pending_repos": []}}),
     )
-    result = runner.invoke(app, ["list", "react", "--json"])
+    result = runner.invoke(app, ["deepwiki", "list", "react", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["command"] == "list"
@@ -826,7 +826,7 @@ def test_status_command(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"public_repo_indexing_status": {"status": "completed"}}),
     )
-    result = runner.invoke(app, ["status", "facebook/react"])
+    result = runner.invoke(app, ["deepwiki", "status", "facebook/react"])
     assert result.exit_code == 0
     assert "facebook/react: completed" in result.output
 
@@ -836,7 +836,7 @@ def test_status_unknown_exits_zero(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"public_repo_indexing_status": {"status": "unknown"}}),
     )
-    result = runner.invoke(app, ["status", "nope/nope"])
+    result = runner.invoke(app, ["deepwiki", "status", "nope/nope"])
     assert result.exit_code == 0
     assert "unknown" in result.output
 
@@ -846,7 +846,7 @@ def test_warm_command(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"warm_public_repo": {"status": "OK"}}),
     )
-    result = runner.invoke(app, ["warm", "facebook/react"])
+    result = runner.invoke(app, ["deepwiki", "warm", "facebook/react"])
     assert result.exit_code == 0
     assert "warmed facebook/react (OK)" in result.output
 
@@ -857,7 +857,7 @@ def test_get_command(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"get_query": Answer(body="past answer", query_id="q1")}),
     )
-    result = runner.invoke(app, ["get", "q1"])
+    result = runner.invoke(app, ["deepwiki", "get", "q1"])
     assert result.exit_code == 0
     assert "past answer" in result.output
 
@@ -868,7 +868,7 @@ def test_get_command_json(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"get_query": Answer(body="past", query_id="q1")}),
     )
-    result = runner.invoke(app, ["get", "q1", "--json"])
+    result = runner.invoke(app, ["deepwiki", "get", "q1", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["command"] == "get"
@@ -882,7 +882,7 @@ def test_get_mermaid_outputs_mermaid(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"get_query": Answer(body=CODEMAP, query_id="q1")}),
     )
-    result = runner.invoke(app, ["get", "q1", "--mermaid"])
+    result = runner.invoke(app, ["deepwiki", "get", "q1", "--mermaid"])
     assert result.exit_code == 0
     assert "flowchart TB" in result.output
 
@@ -892,7 +892,7 @@ def test_list_command_json_coerces_null_to_empty(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"list_public_indexes": {"indices": None, "needs_reindex": None, "pending_repos": None}}),
     )
-    result = runner.invoke(app, ["list", "react", "--json"])
+    result = runner.invoke(app, ["deepwiki", "list", "react", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["indices"] == []
@@ -905,7 +905,7 @@ def test_status_command_json_coerces_null(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"public_repo_indexing_status": {"status": None}}),
     )
-    result = runner.invoke(app, ["status", "facebook/react", "--json"])
+    result = runner.invoke(app, ["deepwiki", "status", "facebook/react", "--json"])
     assert result.exit_code == 0
     assert json.loads(result.output)["status"] == "unknown"
 
@@ -915,6 +915,6 @@ def test_warm_command_json_coerces_null(monkeypatch):
         "repowiki.cli.DevinClient",
         _fake_devin_class({"warm_public_repo": {"status": None}}),
     )
-    result = runner.invoke(app, ["warm", "facebook/react", "--json"])
+    result = runner.invoke(app, ["deepwiki", "warm", "facebook/react", "--json"])
     assert result.exit_code == 0
     assert json.loads(result.output)["status"] == "OK"

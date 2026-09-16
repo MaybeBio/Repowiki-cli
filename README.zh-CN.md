@@ -35,9 +35,9 @@ uv run repowiki-cli --help
 ## 快速上手
 
 ```bash
-repowiki-cli structure facebook/react          # 文档目录
-repowiki-cli contents vercel/next.js           # 完整文档
-repowiki-cli ask facebook/react "What is Fiber?"
+repowiki-cli deepwiki structure facebook/react          # 文档目录
+repowiki-cli deepwiki contents vercel/next.js           # 完整文档
+repowiki-cli deepwiki ask facebook/react "What is Fiber?"
 ```
 
 ## 命令总览
@@ -57,7 +57,7 @@ repowiki-cli ask facebook/react "What is Fiber?"
 ### `structure`
 
 ```bash
-repowiki-cli structure REPO [--json]
+repowiki-cli deepwiki structure REPO [--json]
 ```
 
 打印文档目录（MCP `read_wiki_structure`）。
@@ -65,7 +65,7 @@ repowiki-cli structure REPO [--json]
 ### `contents`
 
 ```bash
-repowiki-cli contents REPO [--page TITLE] [--rich] [--json]
+repowiki-cli deepwiki contents REPO [--page TITLE] [--rich] [--json]
 ```
 
 打印完整文档（MCP `read_wiki_contents`），可能很大。
@@ -79,7 +79,7 @@ repowiki-cli contents REPO [--page TITLE] [--rich] [--json]
 ### `ask`
 
 ```bash
-repowiki-cli ask REPO [QUESTION] \
+repowiki-cli deepwiki ask REPO [QUESTION] \
   [--rich] [--json] [--save [PATH]] \
   [--mode fast|deep|codemap] [--id QUERY_ID] \
   [--sources] [--no-summary] [--context TEXT] [--repo REPO]... \
@@ -113,7 +113,7 @@ repowiki-cli ask REPO [QUESTION] \
 ### `list`
 
 ```bash
-repowiki-cli list SEARCH [--json]
+repowiki-cli deepwiki list SEARCH [--json]
 ```
 
 搜索 DeepWiki 公开索引（逆向 `list_public_indexes`）。
@@ -121,7 +121,7 @@ repowiki-cli list SEARCH [--json]
 ### `status`
 
 ```bash
-repowiki-cli status REPO [--json]
+repowiki-cli deepwiki status REPO [--json]
 ```
 
 查询仓库索引状态（逆向 `public_repo_indexing_status`）。未索引仓库返回 `unknown`
@@ -130,7 +130,7 @@ repowiki-cli status REPO [--json]
 ### `warm`
 
 ```bash
-repowiki-cli warm REPO [--json]
+repowiki-cli deepwiki warm REPO [--json]
 ```
 
 预热仓库文档缓存（逆向 `warm_public_repo`）。
@@ -138,7 +138,7 @@ repowiki-cli warm REPO [--json]
 ### `get`
 
 ```bash
-repowiki-cli get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
+repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
 ```
 
 按 query id 重放历史回答（逆向 `get_query`）。
@@ -339,89 +339,89 @@ CLI 原样透传这些行号，不做偏移，也不重新解读。
 **读文档（MCP）**
 
 ```bash
-repowiki-cli structure facebook/react
-repowiki-cli contents vercel/next.js
-repowiki-cli contents vercel/next.js --page "Getting Started"   # 只看一页
-repowiki-cli contents vercel/next.js --rich                      # 富文本渲染
+repowiki-cli deepwiki structure facebook/react
+repowiki-cli deepwiki contents vercel/next.js
+repowiki-cli deepwiki contents vercel/next.js --page "Getting Started"   # 只看一页
+repowiki-cli deepwiki contents vercel/next.js --rich                      # 富文本渲染
 ```
 
 **提问（MCP）**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?"
-repowiki-cli ask facebook/react "What is Fiber?" --rich
-repowiki-cli ask facebook/react                                  # 交互式
+repowiki-cli deepwiki ask facebook/react "What is Fiber?"
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --rich
+repowiki-cli deepwiki ask facebook/react                                  # 交互式
 ```
 
 **机器可读输出**
 
 ```bash
-repowiki-cli structure facebook/react --json
-repowiki-cli contents vercel/next.js --json
-repowiki-cli ask facebook/react "What is Fiber?" --json
-repowiki-cli ask facebook/react "What is Fiber?" --json --save out.md   # JSON + Markdown 文件
+repowiki-cli deepwiki structure facebook/react --json
+repowiki-cli deepwiki contents vercel/next.js --json
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --json
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --json --save out.md   # JSON + Markdown 文件
 ```
 
 **保存回答到文件**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?" --save            # 自动命名
-repowiki-cli ask facebook/react "What is Fiber?" --save notes/answers.md
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --save            # 自动命名
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --save notes/answers.md
 ```
 
 **逆向后端 — 引擎与深度**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep
-repowiki-cli ask facebook/react "Quick facts?" --mode fast
-repowiki-cli ask facebook/react "Show the data flow" --mode codemap --mermaid
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --mode deep
+repowiki-cli deepwiki ask facebook/react "Quick facts?" --mode fast
+repowiki-cli deepwiki ask facebook/react "Show the data flow" --mode codemap --mermaid
 ```
 
 **逆向后端 — 源码与摘要**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep --sources
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep --no-summary
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --mode deep --sources
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --mode deep --no-summary
 ```
 
 **逆向后端 — 流式与上下文**
 
 ```bash
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep --stream
-repowiki-cli ask facebook/react "What is Fiber?" --mode deep --context "answer in Chinese"
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --mode deep --stream
+repowiki-cli deepwiki ask facebook/react "What is Fiber?" --mode deep --context "answer in Chinese"
 ```
 
 **逆向后端 — 超时**
 
 ```bash
-repowiki-cli ask facebook/react "Deep dive?" --mode deep --timeout 600   # deep 回答放宽到 10 分钟
-repowiki-cli ask facebook/react "Quick facts?" --mode fast --timeout 30
-DEEPWIKI_TIMEOUT=600 repowiki-cli ask facebook/react "Deep dive?" --mode deep   # 或用环境变量
+repowiki-cli deepwiki ask facebook/react "Deep dive?" --mode deep --timeout 600   # deep 回答放宽到 10 分钟
+repowiki-cli deepwiki ask facebook/react "Quick facts?" --mode fast --timeout 30
+DEEPWIKI_TIMEOUT=600 repowiki-cli deepwiki ask facebook/react "Deep dive?" --mode deep   # 或用环境变量
 ```
 
 **逆向后端 — 线程与多仓库**
 
 ```bash
-repowiki-cli ask facebook/react "Follow-up?" --id <query-id>      # 继续线程
-repowiki-cli ask facebook/react "diff?" --repo remix-run/react-router --repo TanStack/router
-repowiki-cli ask facebook/react --mode deep                        # 交互式，自动接续线程
+repowiki-cli deepwiki ask facebook/react "Follow-up?" --id <query-id>      # 继续线程
+repowiki-cli deepwiki ask facebook/react "diff?" --repo remix-run/react-router --repo TanStack/router
+repowiki-cli deepwiki ask facebook/react --mode deep                        # 交互式，自动接续线程
 ```
 
 **管理命令**
 
 ```bash
-repowiki-cli list react
-repowiki-cli status facebook/react
-repowiki-cli warm facebook/react
-repowiki-cli get <query-id>
-repowiki-cli get <query-id> --sources
-repowiki-cli get <query-id> --mermaid
+repowiki-cli deepwiki list react
+repowiki-cli deepwiki status facebook/react
+repowiki-cli deepwiki warm facebook/react
+repowiki-cli deepwiki get <query-id>
+repowiki-cli deepwiki get <query-id> --sources
+repowiki-cli deepwiki get <query-id> --mermaid
 ```
 
 **脚本中利用退出码**
 
 ```bash
-repowiki-cli ask some/repo "q?" --json > out.json
+repowiki-cli deepwiki ask some/repo "q?" --json > out.json
 case $? in
   0) ;;                       # 成功
   2) echo "未索引" ;;
