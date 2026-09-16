@@ -2,7 +2,7 @@ import json
 
 from typer.testing import CliRunner
 
-from repowiki.client import ConnectionError, ToolError
+from repowiki.services.deepwiki.client import ConnectionError, ToolError
 from repowiki.cli import _answer_timeout, _is_retryable, app
 from repowiki.shared.model import Answer, Reference, SourceFile
 
@@ -118,7 +118,7 @@ def test_ask_repl_uses_prominent_marker(monkeypatch):
 
 
 def test_tool_error_returns_exit_1(monkeypatch):
-    from repowiki.client import ToolError
+    from repowiki.services.deepwiki.client import ToolError
 
     class FailingClient:
         async def read_wiki_structure(self, repo):
@@ -131,7 +131,7 @@ def test_tool_error_returns_exit_1(monkeypatch):
 
 
 def test_connection_error_returns_exit_3(monkeypatch):
-    from repowiki.client import ConnectionError
+    from repowiki.services.deepwiki.client import ConnectionError
 
     class FailingClient:
         async def read_wiki_structure(self, repo):
@@ -144,7 +144,7 @@ def test_connection_error_returns_exit_3(monkeypatch):
 
 
 def test_not_indexed_returns_exit_2(monkeypatch):
-    from repowiki.client import ToolError
+    from repowiki.services.deepwiki.client import ToolError
 
     class FailingClient:
         async def read_wiki_structure(self, repo):
@@ -157,7 +157,7 @@ def test_not_indexed_returns_exit_2(monkeypatch):
 
 
 def test_not_indexed_real_deepwiki_phrasing(monkeypatch):
-    from repowiki.client import ToolError
+    from repowiki.services.deepwiki.client import ToolError
 
     class FailingClient:
         async def read_wiki_structure(self, repo):
@@ -267,7 +267,7 @@ def test_contents_json_with_page(monkeypatch):
 
 
 def test_error_json_connection(monkeypatch):
-    from repowiki.client import ConnectionError
+    from repowiki.services.deepwiki.client import ConnectionError
 
     class FailingClient:
         async def read_wiki_structure(self, repo):
@@ -282,7 +282,7 @@ def test_error_json_connection(monkeypatch):
 
 
 def test_error_json_not_indexed(monkeypatch):
-    from repowiki.client import ToolError
+    from repowiki.services.deepwiki.client import ToolError
 
     class FailingClient:
         async def read_wiki_structure(self, repo):
@@ -412,7 +412,7 @@ def test_ask_invalid_mode(monkeypatch):
 
 
 def test_ask_devin_unindexed_exit_2(monkeypatch):
-    from repowiki.client import ToolError
+    from repowiki.services.deepwiki.client import ToolError
 
     class FailingDevin:
         async def ask(self, repos, question, *, mode="fast", query_id=None, context="", generate_summary=True, on_chunk=None, timeout=120.0):

@@ -15,7 +15,7 @@ import httpx
 import websockets
 from websockets.exceptions import ConnectionClosedOK, WebSocketException
 
-from repowiki.client import ConnectionError, ToolError
+from repowiki.services.deepwiki.client import ConnectionError, ToolError
 from repowiki.shared.model import Answer, Reference, SourceFile
 
 

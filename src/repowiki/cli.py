@@ -14,15 +14,15 @@ import typer
 from typer.core import TyperCommand
 
 from repowiki import __version__
-from repowiki.client import (
+from repowiki.services.deepwiki.client import (
     ConnectionError,
     DeepWikiClient,
     DeepWikiError,
     ToolError,
 )
 from repowiki.shared.async_ import run_async
-from repowiki.codemap import codemap_to_mermaid
-from repowiki.devin import DevinClient
+from repowiki.services.deepwiki.codemap import codemap_to_mermaid
+from repowiki.services.deepwiki.devin import DevinClient
 from repowiki.shared.model import Answer
 from repowiki.shared.output import (
     filter_page,

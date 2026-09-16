@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from repowiki import client as client_mod
-from repowiki.client import (
+from repowiki.services.deepwiki import client as client_mod
+from repowiki.services.deepwiki.client import (
     ConnectionError,
     DeepWikiClient,
     ToolError,

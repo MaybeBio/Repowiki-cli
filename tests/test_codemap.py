@@ -1,6 +1,6 @@
 import json
 
-from repowiki.codemap import codemap_to_mermaid
+from repowiki.services.deepwiki.codemap import codemap_to_mermaid
 
 
 def _codemap(traces):
