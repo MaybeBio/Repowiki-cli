@@ -11,21 +11,21 @@ from typing import Iterator
 from rich.console import Console
 from rich.markdown import Markdown
 
-from repowiki.model import Answer, Reference, SourceFile
+from repowiki.shared.model import Answer, Reference, SourceFile
 
 _PAGE_DELIMITER = re.compile(r"^# Page: (.*)$", re.MULTILINE)
 _DETAILS_TAG = re.compile(r"</?details[^>]*>", re.IGNORECASE)
 _SUMMARY_TAG = re.compile(r"<summary[^>]*>(.*?)</summary>", re.IGNORECASE | re.DOTALL)
 
 
-def format_header(repo: str, command: str) -> str:
+def format_header(service: str, repo: str, command: str) -> str:
     """Return the Markdown header line identifying a result."""
-    return f"## DeepWiki: {repo} ({command})"
+    return f"## {service}: {repo} ({command})"
 
 
-def format_result(repo: str, command: str, text: str) -> str:
+def format_result(service: str, repo: str, command: str, text: str) -> str:
     """Wrap result text in a Markdown header, trimming surrounding whitespace."""
-    return f"{format_header(repo, command)}\n\n{text.strip()}"
+    return f"{format_header(service, repo, command)}\n\n{text.strip()}"
 
 
 def format_json(repo: str, command: str, **fields: object) -> str:

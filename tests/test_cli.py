@@ -4,7 +4,7 @@ from typer.testing import CliRunner
 
 from repowiki.client import ConnectionError, ToolError
 from repowiki.cli import _answer_timeout, _is_retryable, app
-from repowiki.model import Answer, Reference, SourceFile
+from repowiki.shared.model import Answer, Reference, SourceFile
 
 runner = CliRunner()
 
@@ -852,7 +852,7 @@ def test_warm_command(monkeypatch):
 
 
 def test_get_command(monkeypatch):
-    from repowiki.model import Answer
+    from repowiki.shared.model import Answer
     monkeypatch.setattr(
         "repowiki.cli.DevinClient",
         _fake_devin_class({"get_query": Answer(body="past answer", query_id="q1")}),
@@ -863,7 +863,7 @@ def test_get_command(monkeypatch):
 
 
 def test_get_command_json(monkeypatch):
-    from repowiki.model import Answer
+    from repowiki.shared.model import Answer
     monkeypatch.setattr(
         "repowiki.cli.DevinClient",
         _fake_devin_class({"get_query": Answer(body="past", query_id="q1")}),
@@ -877,7 +877,7 @@ def test_get_command_json(monkeypatch):
 
 
 def test_get_mermaid_outputs_mermaid(monkeypatch):
-    from repowiki.model import Answer
+    from repowiki.shared.model import Answer
     monkeypatch.setattr(
         "repowiki.cli.DevinClient",
         _fake_devin_class({"get_query": Answer(body=CODEMAP, query_id="q1")}),

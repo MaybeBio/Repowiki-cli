@@ -16,7 +16,7 @@ import websockets
 from websockets.exceptions import ConnectionClosedOK, WebSocketException
 
 from repowiki.client import ConnectionError, ToolError
-from repowiki.model import Answer, Reference, SourceFile
+from repowiki.shared.model import Answer, Reference, SourceFile
 
 
 _CITE_RE = re.compile(r"<cite\s+([^>]*?)\s*/?>")

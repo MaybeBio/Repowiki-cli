@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from contextlib import AsyncExitStack
@@ -12,7 +11,7 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-from repowiki.model import Answer
+from repowiki.shared.model import Answer
 
 logging.getLogger("httpx_sse").setLevel(logging.ERROR)
 logging.getLogger("mcp.client.streamable_http").setLevel(logging.ERROR)
@@ -163,8 +162,3 @@ class DeepWikiClient:
             "ask_question", {"repoName": repo_name, "question": question}
         )
         return Answer(body=text)
-
-
-def run_async(coro: Any) -> Any:
-    """Run an async coroutine synchronously."""
-    return asyncio.run(coro)

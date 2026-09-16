@@ -19,12 +19,12 @@ from repowiki.client import (
     DeepWikiClient,
     DeepWikiError,
     ToolError,
-    run_async,
 )
+from repowiki.shared.async_ import run_async
 from repowiki.codemap import codemap_to_mermaid
 from repowiki.devin import DevinClient
-from repowiki.model import Answer
-from repowiki.output import (
+from repowiki.shared.model import Answer
+from repowiki.shared.output import (
     filter_page,
     format_answer,
     format_answer_tail,
@@ -39,8 +39,8 @@ from repowiki.output import (
     render_markdown,
     status,
 )
-from repowiki.repo import normalize_repo
-from repowiki.save import append_entry, default_save_path
+from repowiki.shared.repo import normalize_repo
+from repowiki.shared.save import append_entry, default_save_path
 
 app = typer.Typer(add_completion=False)
 deepwiki_app = typer.Typer(add_completion=False, help="Query DeepWiki documentation.")
@@ -170,7 +170,7 @@ def _emit(
     if json_mode:
         typer.echo(format_json(repo, command, **json_fields))
         return
-    rendered = format_result(repo, command, text)
+    rendered = format_result("DeepWiki", repo, command, text)
     if rich:
         render_markdown(rendered)
     else:
@@ -625,7 +625,7 @@ def ask(
             fg=typer.colors.YELLOW,
             err=True,
         )
-    typer.echo(format_header(resolved, "ask"))
+    typer.echo(format_header("DeepWiki", resolved, "ask"))
     typer.echo()
     hint = "Ask a question, or /exit to quit."
     if use_devin:
@@ -666,7 +666,7 @@ def list_indexes(
 
 
 # Named ``status_cmd`` (not ``status``) because the module-level ``status``
-# spinner contextmanager from ``repowiki.output`` is referenced by every other
+# spinner contextmanager from ``repowiki.shared.output`` is referenced by every other
 # command; a function named ``status`` would shadow it. The CLI name stays
 # ``status`` via the explicit decorator argument, mirroring ``list``.
 @deepwiki_app.command("status")

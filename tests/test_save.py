@@ -1,6 +1,6 @@
 from datetime import datetime
 
-import repowiki.save as save_mod
+import repowiki.shared.save as save_mod
 
 
 def test_default_save_path_format(monkeypatch):

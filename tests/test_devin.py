@@ -6,7 +6,7 @@ import pytest
 from repowiki import devin as devin_mod
 from repowiki.client import ConnectionError, ToolError
 from repowiki.devin import parse_response
-from repowiki.model import SourceFile
+from repowiki.shared.model import SourceFile
 
 
 def _ev(t, data):

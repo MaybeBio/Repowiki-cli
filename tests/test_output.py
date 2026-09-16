@@ -2,8 +2,8 @@ import io
 
 import pytest
 
-from repowiki.model import Answer, Reference, SourceFile
-from repowiki.output import (
+from repowiki.shared.model import Answer, Reference, SourceFile
+from repowiki.shared.output import (
     _prepare_markdown,
     filter_page,
     format_answer,
@@ -19,16 +19,16 @@ from repowiki.output import (
 
 
 def test_format_header():
-    assert format_header("facebook/react", "ask") == "## DeepWiki: facebook/react (ask)"
+    assert format_header("DeepWiki", "facebook/react", "ask") == "## DeepWiki: facebook/react (ask)"
 
 
 def test_format_result_adds_header_and_trims():
-    result = format_result("facebook/react", "ask", "  some content  \n")
+    result = format_result("DeepWiki", "facebook/react", "ask", "  some content  \n")
     assert result == "## DeepWiki: facebook/react (ask)\n\nsome content"
 
 
 def test_format_result_empty_text():
-    result = format_result("owner/repo", "contents", "   \n\t  ")
+    result = format_result("DeepWiki", "owner/repo", "contents", "   \n\t  ")
     assert result == "## DeepWiki: owner/repo (contents)\n\n"
 
 

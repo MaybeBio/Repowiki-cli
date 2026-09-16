@@ -1,6 +1,6 @@
 import pytest
 
-from repowiki.repo import normalize_repo
+from repowiki.shared.repo import normalize_repo
 
 
 @pytest.mark.parametrize(

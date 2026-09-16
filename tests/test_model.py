@@ -1,4 +1,4 @@
-from repowiki.model import Answer, Reference, SourceFile
+from repowiki.shared.model import Answer, Reference, SourceFile
 
 
 def test_answer_defaults_are_independent_instances():
