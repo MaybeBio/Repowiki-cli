@@ -467,7 +467,7 @@ claude mcp add -s user -t http deepwiki https://mcp.deepwiki.com/mcp
 ```bash
 repowiki-cli codewiki structure REPO [--json]
 repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
-repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save [PATH]]
+repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save PATH]
 ```
 
 快速上手：
@@ -496,15 +496,15 @@ repowiki-cli codewiki ask facebook/react "What is Fiber?"
 ### `codewiki ask`
 
 ```bash
-repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save [PATH]]
+repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save PATH]
 ```
 
 `QUESTION` 为必填——`ask` 是单次问答（没有交互式 REPL）。
 
 - `--rich` — 用 `rich` 渲染答案的 Markdown。
 - `--json` — 输出 JSON 信封。
-- `--save [PATH]` — 把答案保存为 Markdown 文件（见「保存」）。裸 `--save` 会自动
-  命名文件。
+- `--save PATH` — 把答案保存为 Markdown 文件（见「保存」）。需要指定路径
+  （CodeWiki 的 `ask` 不支持裸 `--save` 自动命名）。
 
 ## 开发
 

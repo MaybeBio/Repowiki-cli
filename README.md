@@ -503,7 +503,7 @@ requires **no auth** — it does not support private repos.
 ```bash
 repowiki-cli codewiki structure REPO [--json]
 repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
-repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save [PATH]]
+repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save PATH]
 ```
 
 Quick start:
@@ -533,15 +533,15 @@ Prints the full CodeWiki documentation for a repository, which can be large.
 ### `codewiki ask`
 
 ```bash
-repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save [PATH]]
+repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save PATH]
 ```
 
 `QUESTION` is required — `ask` is single-shot (there is no interactive REPL).
 
 - `--rich` — render the answer's Markdown with `rich`.
 - `--json` — emit a JSON envelope.
-- `--save [PATH]` — save the answer to a Markdown file (see *Saving*). Bare
-  `--save` auto-names the file.
+- `--save PATH` — save the answer to a Markdown file (see *Saving*). A path is
+  required (CodeWiki's `ask` does not auto-name on a bare `--save`).
 
 ## Development
 
