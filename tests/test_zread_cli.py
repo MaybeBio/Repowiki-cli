@@ -110,6 +110,13 @@ def test_ask_repl(monkeypatch):
     assert "answer to What is Fiber?" in result.output
 
 
+def test_cp_concurrency_zero_fails(monkeypatch):
+    monkeypatch.setenv("REPOWIKI_ZREAD_MOCK", "- Overview")
+    result = runner.invoke(zread_app, ["cp", "owner/example", "--concurrency", "0"])
+    assert result.exit_code == 1
+    assert "--concurrency must be at least 1" in result.output
+
+
 def test_cp_writes_files(monkeypatch, tmp_path):
     from repowiki.services.zread.flight import Page
 

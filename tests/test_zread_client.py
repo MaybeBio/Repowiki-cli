@@ -65,6 +65,19 @@ def test_retries_on_transient_status(monkeypatch):
     assert calls["n"] == 3
 
 
+def test_exhausted_transient_raises_connection_error(monkeypatch):
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+
+    def handler(request):
+        return httpx.Response(504)
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), retries=2)
+    with pytest.raises(ZreadConnectionError):
+        run_async(client.trending())
+
+
 def test_challenge_raises_on_403():
     def handler(request):
         return httpx.Response(403)
@@ -129,6 +142,18 @@ def test_parse_sse_body_buffers_round_finish():
         "data: {}",
     ]
     assert _parse_sse_body(lines) == "hello world"
+
+
+def test_parse_sse_body_joins_multiple_rounds():
+    lines = [
+        "event: round_finish",
+        'data: {"text": "first"}',
+        "event: round_finish",
+        'data: {"text": "second"}',
+        "event: finish",
+        "data: {}",
+    ]
+    assert _parse_sse_body(lines) == "first\nsecond"
 
 
 def test_parse_sse_body_errors_on_error_event():

@@ -439,6 +439,8 @@ def cp(
     lang: Optional[str] = typer.Option(None, "--lang", help="Language (zh|en)"),
 ) -> None:
     """Export the whole wiki as Markdown files plus llms.txt."""
+    if concurrency < 1:
+        _fail("--concurrency must be at least 1", "invalid_input", False)
     resolved = _resolve_repo(repo, False)
     client = _make_client(lang)
     out = output_dir or resolved.replace("/", "_")

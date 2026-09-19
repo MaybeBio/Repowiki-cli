@@ -96,7 +96,7 @@ def _parse_sse_body(lines: list[str]) -> str:
                 finished.append(data.get("text", ""))
             elif event == "answer":
                 chunks.append(data.get("text", ""))
-    text = "".join(finished) or "".join(chunks)
+    text = "\n".join(finished) or "".join(chunks)
     return text.strip()
 
 
@@ -174,6 +174,10 @@ class ZreadClient:
                     raise ZreadChallengeError(f"Zread returned HTTP {resp.status_code} (Cloudflare)")
                 if resp.status_code == 404:
                     raise ZreadNotFoundError(f"Zread returned HTTP 404 for {url}")
+                if resp.status_code in _TRANSIENT_STATUS:
+                    raise ZreadConnectionError(
+                        f"Zread returned HTTP {resp.status_code} after {self._retries} attempts"
+                    )
                 resp.raise_for_status()
                 return resp
         raise ZreadError(f"Zread request failed after {self._retries} attempts")
