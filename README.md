@@ -572,6 +572,119 @@ continuation).
 - `--save PATH` — save the answer to a Markdown file (see *Saving*). A path is
   required (CodeWiki's `ask` does not auto-name on a bare `--save`).
 
+## Zread
+
+[zread.ai](https://zread.ai) is a third wiki service, exposed under the `zread`
+namespace. Zread serves pre-generated docs for **public repositories**, and all
+read commands need **no auth**. The one exception is `ask`, which requires a
+token (see below).
+
+```bash
+repowiki-cli zread structure REPO [--lang zh|en] [--json]
+repowiki-cli zread contents REPO [SLUG] [--file PATH] [--start N] [--end M] [--lang zh|en] [--rich] [--json]
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH]
+repowiki-cli zread find QUERY [--limit N] [--lang zh|en] [--json]
+repowiki-cli zread stat REPO [--lang zh|en] [--json]
+repowiki-cli zread top [WEEKS] [--lang zh|en] [--json]
+repowiki-cli zread rand [TOPIC] [--lang zh|en] [--json]
+repowiki-cli zread cp REPO [OUTPUT_DIR] [--concurrency N] [--lang zh|en]
+repowiki-cli zread submit REPO [--json]
+```
+
+Quick start:
+
+```bash
+repowiki-cli zread structure facebook/react          # table of contents
+repowiki-cli zread contents vercel/next.js           # overview page
+repowiki-cli zread find react                        # search repositories
+```
+
+The `--lang zh|en` flag selects the documentation language (default `en`, or the
+`ZREAD_LANG` environment variable).
+
+### `zread structure`
+
+Prints the zread.ai table of contents for a repository.
+
+- `--lang zh|en` — language.
+- `--json` — emit a JSON envelope instead of text.
+
+### `zread contents`
+
+Prints a single page of Markdown documentation. With no `SLUG`, it prints the
+overview (first) page.
+
+- `--file PATH` — read a source file from the repository instead of a wiki page
+  (mutually exclusive with `SLUG`).
+- `--start N` / `--end M` — with `--file`, restrict to a line range.
+- `--lang zh|en` — language.
+- `--rich` — render Markdown with `rich`.
+- `--json` — emit a JSON envelope instead of Markdown.
+
+### `zread ask`
+
+```bash
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save PATH]
+```
+
+With `QUESTION`, `ask` answers once and exits. Without it, `ask` starts an
+interactive REPL — type one question per line and `/exit` (or `/quit`/`/q`) to
+quit.
+
+Unlike the other commands, `ask` requires an auth token: log in to zread.ai and
+copy the token from the localStorage key `CGX_AUTH_STORAGE`, then set the
+`ZREAD_TOKEN` environment variable.
+
+- `--model MODEL` — model (default `glm-5.1`, or the `ZREAD_MODEL` environment
+  variable).
+- `--lang zh|en` — language.
+- `--rich` — render the answer's Markdown with `rich`.
+- `--json` — emit a JSON envelope. Ignored in interactive mode.
+- `--save PATH` — save the answer to a Markdown file (see *Saving*).
+
+### `zread find`
+
+Searches zread.ai for repositories.
+
+- `--limit N` — cap the number of results.
+- `--lang zh|en` — language.
+- `--json` — emit a JSON envelope.
+
+### `zread stat`
+
+Prints repository info and index status on zread.ai.
+
+- `--lang zh|en` — language.
+- `--json` — emit a JSON envelope.
+
+### `zread top`
+
+Prints the zread.ai trending list. `WEEKS` limits the number of week-groups shown.
+
+- `--lang zh|en` — language.
+- `--json` — emit a JSON envelope.
+
+### `zread rand`
+
+Prints a random repository recommendation, optionally filtered by `TOPIC`.
+
+- `--lang zh|en` — language.
+- `--json` — emit a JSON envelope.
+
+### `zread cp`
+
+Exports the whole wiki as Markdown (`NN-slug.md` files) plus `llms.txt` and
+`llms-full.txt` into `OUTPUT_DIR` (defaults to the repository name).
+
+- `--concurrency N` — parallel page fetches (default `5`).
+- `--lang zh|en` — language.
+
+### `zread submit`
+
+Submits a repository for indexing on zread.ai.
+
+- `--json` — emit a JSON envelope.
+
 ## Development
 
 ```bash

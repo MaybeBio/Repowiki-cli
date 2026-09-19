@@ -534,6 +534,112 @@ repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
 - `--save PATH` — 把答案保存为 Markdown 文件（见「保存」）。需要指定路径
   （CodeWiki 的 `ask` 不支持裸 `--save` 自动命名）。
 
+## Zread
+
+[zread.ai](https://zread.ai) 是第三个 wiki 服务，挂在 `zread` 命名空间下。Zread
+提供预先生成的文档，**只读取公开仓库**，所有读取命令都**无需鉴权**；唯一的例外
+是 `ask`，它需要一个 token（见下文）。
+
+```bash
+repowiki-cli zread structure REPO [--lang zh|en] [--json]
+repowiki-cli zread contents REPO [SLUG] [--file PATH] [--start N] [--end M] [--lang zh|en] [--rich] [--json]
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH]
+repowiki-cli zread find QUERY [--limit N] [--lang zh|en] [--json]
+repowiki-cli zread stat REPO [--lang zh|en] [--json]
+repowiki-cli zread top [WEEKS] [--lang zh|en] [--json]
+repowiki-cli zread rand [TOPIC] [--lang zh|en] [--json]
+repowiki-cli zread cp REPO [OUTPUT_DIR] [--concurrency N] [--lang zh|en]
+repowiki-cli zread submit REPO [--json]
+```
+
+快速上手：
+
+```bash
+repowiki-cli zread structure facebook/react          # 目录
+repowiki-cli zread contents vercel/next.js           # 概览页
+repowiki-cli zread find react                        # 搜索仓库
+```
+
+`--lang zh|en` 选择文档语言（默认 `en`，或环境变量 `ZREAD_LANG`）。
+
+### `zread structure`
+
+打印仓库在 zread.ai 上的文档目录。
+
+- `--lang zh|en` — 语言。
+- `--json` — 输出 JSON 信封而非文本。
+
+### `zread contents`
+
+打印某一页 Markdown 文档。不带 `SLUG` 时打印概览（第一）页。
+
+- `--file PATH` — 改为读取仓库中的某个源文件（与 `SLUG` 互斥）。
+- `--start N` / `--end M` — 配合 `--file`，限定行范围。
+- `--lang zh|en` — 语言。
+- `--rich` — 用 `rich` 渲染 Markdown。
+- `--json` — 输出 JSON 信封而非 Markdown。
+
+### `zread ask`
+
+```bash
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save PATH]
+```
+
+带 `QUESTION` 则单次回答后退出；不带则进入交互式 REPL——每行一个问题，输入
+`/exit`（或 `/quit`/`/q`）退出。
+
+与其他命令不同，`ask` 需要鉴权 token：登录 zread.ai，从 localStorage 的
+`CGX_AUTH_STORAGE` 键中复制 token，然后设置 `ZREAD_TOKEN` 环境变量。
+
+- `--model MODEL` — 模型（默认 `glm-5.1`，或环境变量 `ZREAD_MODEL`）。
+- `--lang zh|en` — 语言。
+- `--rich` — 用 `rich` 渲染答案的 Markdown。
+- `--json` — 输出 JSON 信封；交互模式下忽略。
+- `--save PATH` — 把答案保存为 Markdown 文件（见「保存」）。
+
+### `zread find`
+
+在 zread.ai 上搜索仓库。
+
+- `--limit N` — 限制结果数量。
+- `--lang zh|en` — 语言。
+- `--json` — 输出 JSON 信封。
+
+### `zread stat`
+
+打印仓库在 zread.ai 上的信息与索引状态。
+
+- `--lang zh|en` — 语言。
+- `--json` — 输出 JSON 信封。
+
+### `zread top`
+
+打印 zread.ai 趋势榜。`WEEKS` 限制显示的周分组数量。
+
+- `--lang zh|en` — 语言。
+- `--json` — 输出 JSON 信封。
+
+### `zread rand`
+
+打印随机仓库推荐，可用 `TOPIC` 按主题过滤。
+
+- `--lang zh|en` — 语言。
+- `--json` — 输出 JSON 信封。
+
+### `zread cp`
+
+把整个 wiki 导出为 Markdown（`NN-slug.md` 文件）以及 `llms.txt` 和
+`llms-full.txt`，写入 `OUTPUT_DIR`（默认使用仓库名）。
+
+- `--concurrency N` — 并发抓取页数（默认 `5`）。
+- `--lang zh|en` — 语言。
+
+### `zread submit`
+
+向 zread.ai 提交仓库进行索引。
+
+- `--json` — 输出 JSON 信封。
+
 ## 开发
 
 ```bash

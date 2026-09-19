@@ -5,7 +5,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-_COMMANDS = ("structure", "contents", "ask", "list", "status", "warm", "get")
+_COMMANDS = (
+    "structure", "contents", "ask", "list", "status", "warm", "get",
+    "find", "stat", "top", "rand", "cp", "submit",
+)
 _BARE_INVOCATION = re.compile(r"repowiki-cli\s+(?:" + "|".join(_COMMANDS) + r")\b")
 
 
