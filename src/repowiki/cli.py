@@ -9,6 +9,7 @@ import typer
 from repowiki import __version__
 from repowiki.services.codewiki import register as register_codewiki
 from repowiki.services.deepwiki import register as register_deepwiki
+from repowiki.services.zread import register as register_zread
 
 app = typer.Typer(add_completion=False)
 
@@ -31,6 +32,7 @@ def _main(
 
 register_deepwiki(app)
 register_codewiki(app)
+register_zread(app)
 
 
 def main() -> None:
