@@ -73,7 +73,7 @@ def test_extract_markdown_byte_slices_chinese():
 def test_extract_markdown_matches_slug():
     a = _blob("---\nslug: one\n---\n\nfirst", "0")
     b = _blob("---\nslug: two\n---\n\nsecond", "1")
-    md = extract_markdown(a + b, "two")
+    md = extract_markdown(a + "\n" + b, "two")
     assert md is not None
     assert "second" in md
     assert "first" not in md

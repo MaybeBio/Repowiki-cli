@@ -29,7 +29,7 @@ class WikiInfo:
 
 
 _FLIGHT_RE = re.compile(r'self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)')
-_TBLOB_RE = re.compile(rb"([0-9a-f]+):T([0-9a-f]+),")
+_TBLOB_RE = re.compile(rb"(?m)^([0-9a-f]+):T([0-9a-f]+),")
 _WIKI_VALUE_RE = re.compile(r'"wiki":\s*(?=\{)')
 _CALLOUT_RE = re.compile(r"<Cgx(?P<kind>[A-Za-z]+)>(?P<body>.*?)</Cgx(?P=kind)>", re.S)
 _FENCE_OPEN_RE = re.compile(r"^\s{0,3}(```+|~~~+)")
