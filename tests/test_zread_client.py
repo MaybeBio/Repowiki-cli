@@ -105,6 +105,24 @@ def test_envelope_error_raises():
         run_async(client.trending())
 
 
+def test_bad_request_surfaces_body():
+    def handler(request):
+        return httpx.Response(400, json={"code": 1, "msg": "repo already submitted"})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(ZreadError, match="repo already submitted"):
+        run_async(client.search_repos("x"))
+
+
+def test_bad_request_surfaces_raw_body():
+    def handler(request):
+        return httpx.Response(400, text="nope")
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(ZreadError, match="nope"):
+        run_async(client.search_repos("x"))
+
+
 def test_submit_requires_token():
     client = ZreadClient(
         transport=httpx.MockTransport(lambda r: httpx.Response(200)), token=None
@@ -125,7 +143,7 @@ def test_submit_hits_endpoint_with_bearer():
     client = ZreadClient(transport=httpx.MockTransport(handler), token="tok")
     assert run_async(client.submit("o/r")) == {"ok": True}
     assert "api/v1/public/repo/submit" in seen["url"]
-    assert seen["body"] == {"name_or_path": "o/r"}
+    assert seen["body"] == {"name_or_path": "o/r", "notification_email": "example@zread.ai"}
     assert seen["auth"] == "Bearer tok"
 
 

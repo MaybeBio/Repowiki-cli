@@ -1,14 +1,22 @@
 # repowiki-cli · 仓库 Wiki 查询工具
 
-从终端查询任意公开 GitHub 仓库的 [DeepWiki](https://deepwiki.com) 与
-[Google Code Wiki](https://codewiki.google) 文档。
+从终端查询任意公开 GitHub 仓库的 [DeepWiki](https://deepwiki.com)、
+[Google Code Wiki](https://codewiki.google) 与 [zread.ai](https://zread.ai) 文档。
 
 > English docs: [README.md](README.md) · 英文文档见 [README.md](README.md)
 
 ## 这是什么
 
 `repowiki-cli` 是一个基于 Python/Typer 的 CLI，能在终端里读取 AI 生成的仓库文档、
-并就代码提问。它在**同一套命令界面**下对接了**两个后端**：
+并就代码提问。它在**同一套命令界面**下对接了**三个 wiki 服务**，每个服务一个命名空间：
+
+| 服务 | 命名空间 | 传输 | 鉴权 |
+|------|---------|------|------|
+| **DeepWiki** | `deepwiki` | MCP（Streamable HTTP）+ 逆向 REST/WebSocket | 无需 |
+| **Google Code Wiki** | `codewiki` | Google `batchexecute` RPC | 无需 |
+| **Zread** | `zread` | Next.js RSC + JSON REST + SSE | `ask` / `submit` 需要 token |
+
+DeepWiki 由两个可互换的后端提供：
 
 | 后端 | 传输 | 命令 | 信息量 |
 |------|------|------|--------|
@@ -39,23 +47,99 @@ uv run repowiki-cli --help
 repowiki-cli deepwiki structure facebook/react          # 文档目录
 repowiki-cli deepwiki contents vercel/next.js           # 完整文档
 repowiki-cli deepwiki ask facebook/react "What is Fiber?"
+repowiki-cli codewiki ask facebook/react "What is Fiber?"
+repowiki-cli zread contents vercel/next.js              # 概览页
 ```
 
 ## 命令总览
 
-| 命令 | 用途 | 后端 |
+| 命令 | 用途 | 服务 |
 |------|------|------|
-| `structure REPO` | 打印文档目录 | MCP |
-| `contents REPO` | 打印完整文档 | MCP |
-| `ask REPO [QUESTION]` | 提问（单次或交互） | 默认 MCP；带参数走逆向 |
-| `list SEARCH` | 搜索已索引的公开仓库 | 逆向 |
-| `status REPO` | 查询仓库索引状态 | 逆向 |
-| `warm REPO` | 预热文档缓存 | 逆向 |
-| `get QUERY_ID` | 按 query id 重放历史回答 | 逆向 |
+| `structure REPO` | 打印文档目录 | DeepWiki（MCP） |
+| `contents REPO` | 打印完整文档 | DeepWiki（MCP） |
+| `ask REPO [QUESTION]` | 提问（单次或交互） | DeepWiki（MCP / 逆向） |
+| `list SEARCH` | 搜索已索引的公开仓库 | DeepWiki（逆向） |
+| `status REPO` | 查询仓库索引状态 | DeepWiki（逆向） |
+| `warm REPO` | 预热文档缓存 | DeepWiki（逆向） |
+| `get QUERY_ID` | 按 query id 重放历史回答 | DeepWiki（逆向） |
+| `structure REPO` | 打印文档目录 | CodeWiki |
+| `contents REPO` | 打印完整文档 | CodeWiki |
+| `ask REPO [QUESTION]` | 提问（单次或交互） | CodeWiki |
+| `structure REPO` | 打印文档目录 | Zread |
+| `contents REPO [SLUG]` | 打印某一页文档（默认概览页） | Zread |
+| `ask REPO [QUESTION]` | 提问（单次或交互，需要 token） | Zread |
+| `find QUERY` | 搜索仓库 | Zread |
+| `stat REPO` | 查询仓库信息与索引状态 | Zread |
+| `top [WEEKS]` | 打印趋势榜 | Zread |
+| `rand [TOPIC]` | 随机仓库推荐 | Zread |
+| `cp REPO [OUTPUT_DIR]` | 导出整个 wiki 为 Markdown + `llms.txt` | Zread |
+| `submit REPO` | 提交仓库进行索引（需要 token） | Zread |
 
-## 命令详解
+每个服务在下方各自独立成节：[DeepWiki](#deepwiki)、[CodeWiki](#codewiki)、
+[Zread](#zread)。
 
-### `structure`
+## 仓库格式
+
+`REPO` 接受以下任意形式：
+
+- `owner/repo`
+- `github.com/owner/repo`
+- `www.github.com/owner/repo`
+- `https://github.com/owner/repo`（可带 `/tree/main` 或 `.git`）
+
+统一归一化为 `owner/repo`。
+
+## JSON 输出
+
+主命令输出带 `repo` 与 `command` 的信封：
+
+```json
+{
+  "repo": "facebook/react",
+  "command": "ask",
+  "question": "What is Fiber?",
+  "answer": "..."
+}
+```
+
+DeepWiki 的 `ask` 在逆向后端提供数据时，还会附带 `summary`、`references`、
+`sources`、`stats`、`query_id`。管理命令（`list`/`status`/`warm`/`get`）省略
+`repo`，仅含 `command` + 字段。错误以 `{"error": ..., "kind": ...}` 写到 stderr。
+
+## 保存（`--save`）
+
+`--save` 把答案写入 Markdown 文件：
+
+- `--save PATH` 写入（并追加到）指定路径，自动创建父目录。CodeWiki 与 Zread 的
+  `ask` 要求提供路径。
+- DeepWiki 的 `ask` 还支持裸 `--save`，自动命名为当前目录下的
+  `repowiki-<owner>-<repo>_<timestamp>.md`。
+- 交互模式下整个会话的所有回答追加到同一文件；单次回答在文件已存在时追加。
+- 可与 `--json` 组合：stdout 保持 JSON，同时把 Markdown 写入文件。
+
+## 环境变量
+
+| 变量 | 用途 | 默认值 |
+|------|------|--------|
+| `DEEPWIKI_MCP_URL` | DeepWiki MCP 端点 | `https://mcp.deepwiki.com/mcp` |
+| `DEEPWIKI_API_URL` | DeepWiki 逆向后端端点 | `https://api.devin.ai` |
+| `DEEPWIKI_REPL_RETRIES` | DeepWiki 逆向 REPL 重试次数 | `4` |
+| `DEEPWIKI_TIMEOUT` | DeepWiki 逆向回答超时（秒） | `120`（`--mode deep` 为 `300`） |
+| `CODEWIKI_CACHE_DIR` | CodeWiki 引导缓存目录 | `$XDG_CACHE_HOME` 或 `~/.cache` |
+| `ZREAD_TOKEN` | Zread `ask` / `submit` 的鉴权 token | — |
+| `ZREAD_LANG` | Zread 默认语言 | `en` |
+| `ZREAD_MODEL` | Zread `ask` 模型 | `glm-5.1` |
+| `REPOWIKI_MOCK_TEXT` | mock MCP 结果（测试用） | — |
+| `REPOWIKI_DEVIN_MOCK` | mock 逆向回答（测试用） | — |
+| `REPOWIKI_CODEWIKI_MOCK` | mock CodeWiki 结果（测试用） | — |
+| `REPOWIKI_ZREAD_MOCK` | mock Zread 结果（测试用） | — |
+
+## DeepWiki
+
+[DeepWiki](https://deepwiki.com) 是首要服务，挂在 `deepwiki` 命名空间下。它读取
+**公开仓库**、**无需鉴权**。
+
+### `deepwiki structure`
 
 ```bash
 repowiki-cli deepwiki structure REPO [--json]
@@ -63,7 +147,7 @@ repowiki-cli deepwiki structure REPO [--json]
 
 打印文档目录（MCP `read_wiki_structure`）。
 
-### `contents`
+### `deepwiki contents`
 
 ```bash
 repowiki-cli deepwiki contents REPO [--page TITLE] [--rich] [--json]
@@ -77,7 +161,7 @@ repowiki-cli deepwiki contents REPO [--page TITLE] [--rich] [--json]
 - `--rich` — 用 `rich` 渲染 Markdown（带颜色和格式）。
 - `--json` — 输出 JSON 信封而非 Markdown。
 
-### `ask`
+### `deepwiki ask`
 
 ```bash
 repowiki-cli deepwiki ask REPO [QUESTION] \
@@ -111,7 +195,7 @@ repowiki-cli deepwiki ask REPO [QUESTION] \
 - `--rich` — 用 `rich` 渲染答案。与 `--stream` 一起使用时无效。
 - `--json` — 输出 JSON 信封；交互模式下忽略。
 
-### `list`
+### `deepwiki list`
 
 ```bash
 repowiki-cli deepwiki list SEARCH [--json]
@@ -119,7 +203,7 @@ repowiki-cli deepwiki list SEARCH [--json]
 
 搜索 DeepWiki 公开索引（逆向 `list_public_indexes`）。
 
-### `status`
+### `deepwiki status`
 
 ```bash
 repowiki-cli deepwiki status REPO [--json]
@@ -128,7 +212,7 @@ repowiki-cli deepwiki status REPO [--json]
 查询仓库索引状态（逆向 `public_repo_indexing_status`）。未索引仓库返回 `unknown`
 属于正常结果，退出码 `0`。
 
-### `warm`
+### `deepwiki warm`
 
 ```bash
 repowiki-cli deepwiki warm REPO [--json]
@@ -136,7 +220,7 @@ repowiki-cli deepwiki warm REPO [--json]
 
 预热仓库文档缓存（逆向 `warm_public_repo`）。
 
-### `get`
+### `deepwiki get`
 
 ```bash
 repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
@@ -144,7 +228,7 @@ repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
 
 按 query id 重放历史回答（逆向 `get_query`）。
 
-## 设计
+### DeepWiki 设计
 
 整个 CLI 共用同一个结果类型 `Answer`，让两个后端都接入同一套格式化层：
 
@@ -162,23 +246,9 @@ class Answer:
 MCP 后端只产生裸的 `Answer(body=...)`；逆向后端补齐 summary、references、sources、
 stats、query_id——`--json` 会全部携带。
 
-源码结构：
+### DeepWiki 后端详解
 
-```
-src/repowiki/
-  cli.py      # Typer 命令、路由、REPL、重试
-  client.py   # MCP 后端（DeepWikiClient）+ 错误分类
-  devin.py    # 逆向后端（DevinClient）：REST + WebSocket + 轮询
-  model.py    # Answer / Reference / SourceFile
-  output.py   # 格式化、页面过滤、引用填充、富文本渲染
-  codemap.py  # codemap JSON -> Mermaid 流程图
-  repo.py     # 仓库引用归一化
-  save.py     # --save 文件命名与追加
-```
-
-## 后端详解
-
-### MCP 后端（`client.py`）
+**MCP 后端（`services/deepwiki/client.py`）**
 
 - 端点：`DEEPWIKI_MCP_URL`，默认 `https://mcp.deepwiki.com/mcp`。
 - 使用 **Streamable HTTP**（SSE 端点已废弃）。
@@ -189,7 +259,7 @@ src/repowiki/
   - 交互式 REPL 只开**一条**会话，跨问题复用。
   - 首次连接失败重试一次；会话中途断开会重开一次恢复。
 
-### 逆向后端（`devin.py`）
+**逆向后端（`services/deepwiki/devin.py`）**
 
 - 端点：`DEEPWIKI_API_URL`，默认 `https://api.devin.ai`。
 - 回答流程（`ask`）：
@@ -228,7 +298,7 @@ WebSocket 流上观测到的事件类型：`snapshot`、`file_contents`、`stats
 | `POST` | `/ada/warm_public_repo?repo_name=` | `warm` |
 | `GET` | `/ada/query/{query_id}` | `get` |
 
-## 错误处理与退出码
+### DeepWiki 错误处理与退出码
 
 异常被归入一个小型分类，并映射到退出码：
 
@@ -249,7 +319,7 @@ CLI 区分「未索引」和普通工具错误。
 {"error": "Could not connect to DeepWiki server...", "kind": "connection"}
 ```
 
-## 流式、重试与引用
+### DeepWiki 流式、重试与引用
 
 仅适用于**逆向**后端。
 
@@ -281,59 +351,13 @@ CLI 区分「未索引」和普通工具错误。
 
 CLI 原样透传这些行号，不做偏移，也不重新解读。
 
-## 仓库格式
-
-`REPO` 接受以下任意形式：
-
-- `owner/repo`
-- `github.com/owner/repo`
-- `www.github.com/owner/repo`
-- `https://github.com/owner/repo`（可带 `/tree/main` 或 `.git`）
-
-统一归一化为 `owner/repo`。
-
-## JSON 输出
-
-主命令输出带 `repo` 与 `command` 的信封：
-
-```json
-{
-  "repo": "facebook/react",
-  "command": "ask",
-  "question": "What is Fiber?",
-  "answer": "..."
-}
-```
-
-`ask` 在逆向后端提供数据时，还会附带 `summary`、`references`、`sources`、`stats`、
-`query_id`。管理命令（`list`/`status`/`warm`/`get`）省略 `repo`，仅含 `command` +
-字段。错误以 `{"error": ..., "kind": ...}` 写到 stderr。
-
-## 保存（`--save`）
-
-- 裸 `--save` 自动命名为当前目录下的 `repowiki-<owner>-<repo>_<timestamp>.md`。
-- `--save PATH` 写入（并追加到）指定路径，自动创建父目录。
-- 交互模式下整个会话的所有回答追加到同一文件；单次回答在文件已存在时追加。
-- 可与 `--json` 组合：stdout 保持 JSON，同时把 Markdown 写入文件。
-
-## Mermaid
+### DeepWiki Mermaid
 
 `--mode codemap` 返回 codemap（形如 `{"traces": [...]}` 的 JSON）。`--mermaid` 把
 它渲染成 `flowchart TB`，每条 trace 一个子图并带配色。粘贴到 mermaid.live、GitHub
 或 VS Code 即可查看。若答案不是 codemap，`--mermaid` 会告警并打印纯文本。
 
-## 环境变量
-
-| 变量 | 用途 | 默认值 |
-|------|------|--------|
-| `DEEPWIKI_MCP_URL` | MCP 端点 | `https://mcp.deepwiki.com/mcp` |
-| `DEEPWIKI_API_URL` | 逆向后端端点 | `https://api.devin.ai` |
-| `DEEPWIKI_REPL_RETRIES` | 逆向 REPL 重试次数 | `4` |
-| `DEEPWIKI_TIMEOUT` | 逆向回答超时（秒） | `120`（`--mode deep` 为 `300`） |
-| `REPOWIKI_MOCK_TEXT` | mock MCP 结果（测试用） | — |
-| `REPOWIKI_DEVIN_MOCK` | mock 逆向回答（测试用） | — |
-
-## 组合实践方案
+### DeepWiki 组合实践方案
 
 以下组合按意图分组，仓库默认 `facebook/react`。
 
@@ -419,32 +443,6 @@ repowiki-cli deepwiki get <query-id> --sources
 repowiki-cli deepwiki get <query-id> --mermaid
 ```
 
-**CodeWiki — 读文档（Google Code Wiki）**
-
-```bash
-repowiki-cli codewiki structure facebook/react
-repowiki-cli codewiki contents vercel/next.js
-repowiki-cli codewiki contents vercel/next.js --page "Getting Started"   # 只看一个 section
-repowiki-cli codewiki contents vercel/next.js --rich                      # 富文本渲染
-```
-
-**CodeWiki — 提问**
-
-```bash
-repowiki-cli codewiki ask facebook/react "What is Fiber?"
-repowiki-cli codewiki ask facebook/react "What is Fiber?" --rich
-repowiki-cli codewiki ask facebook/react                                    # 交互式（输入 /exit 退出）
-```
-
-**CodeWiki — 机器可读与保存**
-
-```bash
-repowiki-cli codewiki structure facebook/react --json
-repowiki-cli codewiki contents vercel/next.js --json
-repowiki-cli codewiki ask facebook/react "What is Fiber?" --json
-repowiki-cli codewiki ask facebook/react "What is Fiber?" --save notes/answers.md   # 需指定路径（不支持裸 --save）
-```
-
 **脚本中利用退出码**
 
 ```bash
@@ -457,7 +455,7 @@ case $? in
 esac
 ```
 
-## DeepWiki MCP 服务
+### DeepWiki MCP 服务
 
 官方 [DeepWiki MCP 服务](https://docs.devin.ai/work-with-devin/deepwiki-mcp) 免费、
 公开仓库无需鉴权。它暴露两种传输协议：Streamable HTTP（`/mcp`，推荐）与 SSE
@@ -473,7 +471,7 @@ claude mcp add -s user -t http deepwiki https://mcp.deepwiki.com/mcp
 [Devin MCP 服务](https://docs.devin.ai/work-with-devin/devin-mcp)。完整文档索引在
 <https://docs.devin.ai/llms.txt>。
 
-## 相关工具
+### DeepWiki 相关工具
 
 以下是同一领域的参考/替代 CLI，重造轮子前值得先看看：
 
@@ -588,10 +586,13 @@ repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save
 带 `QUESTION` 则单次回答后退出；不带则进入交互式 REPL——每行一个问题，输入
 `/exit`（或 `/quit`/`/q`）退出。
 
-与其他命令不同，`ask` 需要鉴权 token：登录 zread.ai，从 localStorage 的
-`CGX_AUTH_STORAGE` 键中复制 token，然后设置 `ZREAD_TOKEN` 环境变量。
+与其他命令不同，`ask` 需要鉴权 token（一个 JWT）。登录 zread.ai 后，在浏览器
+DevTools 控制台执行
+`JSON.parse(localStorage.getItem("CGX_AUTH_STORAGE")).state.token`，即可得到 token，
+把它设为 `ZREAD_TOKEN` 环境变量。
 
-- `--model MODEL` — 模型（默认 `glm-5.1`，或环境变量 `ZREAD_MODEL`）。
+- `--model MODEL` — 模型（默认 `glm-5.1`，或环境变量 `ZREAD_MODEL`）。对应网页端的
+  `CGX_CHAT_MODEL`（如 `glm-5.1`、`claude-sonnet-4.6`）。
 - `--lang zh|en` — 语言。
 - `--rich` — 用 `rich` 渲染答案的 Markdown。
 - `--json` — 输出 JSON 信封；交互模式下忽略。
@@ -636,9 +637,10 @@ repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save
 
 ### `zread submit`
 
-向 zread.ai 提交仓库进行索引。需要一个 token：登录 zread.ai，从 localStorage 的
-`CGX_AUTH_STORAGE` 键中复制 token，然后设置 `ZREAD_TOKEN` 环境变量。未设置时，
-`submit` 会打印警告并跳过。
+向 zread.ai 提交仓库进行索引。需要一个 token（JWT）：登录 zread.ai 后，在 DevTools
+控制台执行
+`JSON.parse(localStorage.getItem("CGX_AUTH_STORAGE")).state.token`，把结果设为
+`ZREAD_TOKEN` 环境变量。未设置时，`submit` 会打印警告并跳过。
 
 - `--json` — 输出 JSON 信封。
 

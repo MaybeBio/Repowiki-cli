@@ -1,7 +1,8 @@
 # repowiki-cli
 
-Query [DeepWiki](https://deepwiki.com) and [Google Code Wiki](https://codewiki.google)
-documentation for any public GitHub repository from your terminal.
+Query [DeepWiki](https://deepwiki.com), [Google Code Wiki](https://codewiki.google),
+and [zread.ai](https://zread.ai) documentation for any public GitHub repository
+from your terminal.
 
 > 中文文档见 [README.zh-CN.md](README.zh-CN.md) · Chinese docs:
 > [README.zh-CN.md](README.zh-CN.md)
@@ -10,7 +11,16 @@ documentation for any public GitHub repository from your terminal.
 
 `repowiki-cli` is a Python/Typer CLI that reads AI-generated repository
 documentation and answers questions about code, from the terminal. It speaks to
-**two backends** behind a single uniform command surface:
+**three wiki services** behind a single uniform command surface, one namespace
+per service:
+
+| Service | Namespace | Transport | Auth |
+|---------|-----------|-----------|------|
+| **DeepWiki** | `deepwiki` | MCP (Streamable HTTP) + reverse REST/WebSocket | none |
+| **Google Code Wiki** | `codewiki` | Google `batchexecute` RPC | none |
+| **Zread** | `zread` | Next.js RSC + JSON REST + SSE | `ask` / `submit` need a token |
+
+DeepWiki is served by two interchangeable backends:
 
 | Backend | Transport | Commands | Richness |
 |---------|-----------|----------|----------|
@@ -43,23 +53,101 @@ uv run repowiki-cli --help
 repowiki-cli deepwiki structure facebook/react          # table of contents
 repowiki-cli deepwiki contents vercel/next.js           # full documentation
 repowiki-cli deepwiki ask facebook/react "What is Fiber?"
+repowiki-cli codewiki ask facebook/react "What is Fiber?"
+repowiki-cli zread contents vercel/next.js              # overview page
 ```
 
 ## Command overview
 
-| Command | Purpose | Backend |
+| Command | Purpose | Service |
 |---------|---------|---------|
-| `structure REPO` | Print the documentation table of contents | MCP |
-| `contents REPO` | Print the full documentation | MCP |
-| `ask REPO [QUESTION]` | Answer a question (single-shot or interactive) | MCP by default; reverse with flags |
-| `list SEARCH` | Search indexed public repos | Reverse |
-| `status REPO` | Report a repo's indexing status | Reverse |
-| `warm REPO` | Pre-warm a repo's docs cache | Reverse |
-| `get QUERY_ID` | Replay a past answer by query id | Reverse |
+| `structure REPO` | Print the documentation table of contents | DeepWiki (MCP) |
+| `contents REPO` | Print the full documentation | DeepWiki (MCP) |
+| `ask REPO [QUESTION]` | Answer a question (single-shot or interactive) | DeepWiki (MCP / reverse) |
+| `list SEARCH` | Search indexed public repos | DeepWiki (reverse) |
+| `status REPO` | Report a repo's indexing status | DeepWiki (reverse) |
+| `warm REPO` | Pre-warm a repo's docs cache | DeepWiki (reverse) |
+| `get QUERY_ID` | Replay a past answer by query id | DeepWiki (reverse) |
+| `structure REPO` | Print the documentation table of contents | CodeWiki |
+| `contents REPO` | Print the full documentation | CodeWiki |
+| `ask REPO [QUESTION]` | Answer a question (single-shot or interactive) | CodeWiki |
+| `structure REPO` | Print the documentation table of contents | Zread |
+| `contents REPO [SLUG]` | Print a page of documentation (default: overview) | Zread |
+| `ask REPO [QUESTION]` | Answer a question (single-shot or interactive, needs token) | Zread |
+| `find QUERY` | Search repositories | Zread |
+| `stat REPO` | Report a repo's info and index status | Zread |
+| `top [WEEKS]` | Show the trending list | Zread |
+| `rand [TOPIC]` | Get a random repository recommendation | Zread |
+| `cp REPO [OUTPUT_DIR]` | Export the whole wiki as Markdown + `llms.txt` | Zread |
+| `submit REPO` | Submit a repo for indexing (needs token) | Zread |
 
-## Command reference
+Each service is documented in its own section below: [DeepWiki](#deepwiki),
+[CodeWiki](#codewiki), [Zread](#zread).
 
-### `structure`
+## Repo formats
+
+`REPO` accepts any of:
+
+- `owner/repo`
+- `github.com/owner/repo`
+- `www.github.com/owner/repo`
+- `https://github.com/owner/repo` (optionally with `/tree/main` or `.git`)
+
+Everything is normalized to `owner/repo`.
+
+## JSON output
+
+Main commands emit an envelope with `repo` and `command`:
+
+```json
+{
+  "repo": "facebook/react",
+  "command": "ask",
+  "question": "What is Fiber?",
+  "answer": "..."
+}
+```
+
+DeepWiki `ask` additionally includes `summary`, `references`, `sources`, `stats`,
+and `query_id` when the reverse backend provides them. Management commands
+(`list` / `status` / `warm` / `get`) omit `repo` and use `command` + fields
+only. Errors go to stderr as `{"error": ..., "kind": ...}`.
+
+## Saving (`--save`)
+
+`--save` writes answers to a Markdown file:
+
+- `--save PATH` writes to (and appends to) the given path, creating parent
+  directories. CodeWiki and Zread `ask` take a required path.
+- DeepWiki `ask` also accepts a bare `--save`, which auto-names the file
+  `repowiki-<owner>-<repo>_<timestamp>.md` in the current directory.
+- In interactive mode all answers in the session append to one file; single-shot
+  answers append when the file already exists.
+- Combine with `--json` to keep stdout as JSON while writing Markdown to the file.
+
+## Environment variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `DEEPWIKI_MCP_URL` | DeepWiki MCP endpoint | `https://mcp.deepwiki.com/mcp` |
+| `DEEPWIKI_API_URL` | DeepWiki reverse backend endpoint | `https://api.devin.ai` |
+| `DEEPWIKI_REPL_RETRIES` | DeepWiki reverse REPL retry attempts | `4` |
+| `DEEPWIKI_TIMEOUT` | DeepWiki reverse answer timeout in seconds | `120` (`300` for `--mode deep`) |
+| `CODEWIKI_CACHE_DIR` | CodeWiki bootstrap cache directory | `$XDG_CACHE_HOME` or `~/.cache` |
+| `ZREAD_TOKEN` | Zread auth token for `ask` / `submit` | — |
+| `ZREAD_LANG` | Zread default language | `en` |
+| `ZREAD_MODEL` | Zread `ask` model | `glm-5.1` |
+| `REPOWIKI_MOCK_TEXT` | mock MCP result (tests) | — |
+| `REPOWIKI_DEVIN_MOCK` | mock reverse answer (tests) | — |
+| `REPOWIKI_CODEWIKI_MOCK` | mock CodeWiki result (tests) | — |
+| `REPOWIKI_ZREAD_MOCK` | mock Zread result (tests) | — |
+
+## DeepWiki
+
+[DeepWiki](https://deepwiki.com) is the primary service, exposed under the
+`deepwiki` namespace. It reads **public repositories** with **no auth**.
+
+### `deepwiki structure`
 
 ```bash
 repowiki-cli deepwiki structure REPO [--json]
@@ -67,7 +155,7 @@ repowiki-cli deepwiki structure REPO [--json]
 
 Prints the documentation table of contents (MCP `read_wiki_structure`).
 
-### `contents`
+### `deepwiki contents`
 
 ```bash
 repowiki-cli deepwiki contents REPO [--page TITLE] [--rich] [--json]
@@ -82,7 +170,7 @@ Prints the full documentation (MCP `read_wiki_contents`), which can be large.
 - `--rich` — render Markdown with color/formatting via `rich`.
 - `--json` — emit a JSON envelope instead of Markdown.
 
-### `ask`
+### `deepwiki ask`
 
 ```bash
 repowiki-cli deepwiki ask REPO [QUESTION] \
@@ -123,7 +211,7 @@ alone does **not** switch backends — pair it with `--mode codemap`.
   `--stream`.
 - `--json` — emit a JSON envelope. Ignored in interactive mode.
 
-### `list`
+### `deepwiki list`
 
 ```bash
 repowiki-cli deepwiki list SEARCH [--json]
@@ -131,7 +219,7 @@ repowiki-cli deepwiki list SEARCH [--json]
 
 Searches DeepWiki's public index (reverse `list_public_indexes`).
 
-### `status`
+### `deepwiki status`
 
 ```bash
 repowiki-cli deepwiki status REPO [--json]
@@ -140,7 +228,7 @@ repowiki-cli deepwiki status REPO [--json]
 Reports a repo's indexing state (reverse `public_repo_indexing_status`).
 `unknown` is a normal result for an unindexed repo and exits `0`.
 
-### `warm`
+### `deepwiki warm`
 
 ```bash
 repowiki-cli deepwiki warm REPO [--json]
@@ -148,7 +236,7 @@ repowiki-cli deepwiki warm REPO [--json]
 
 Pre-warms a repo's docs cache (reverse `warm_public_repo`).
 
-### `get`
+### `deepwiki get`
 
 ```bash
 repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
@@ -156,7 +244,7 @@ repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
 
 Replays a past answer by query id (reverse `get_query`).
 
-## Design
+### DeepWiki design
 
 The whole CLI shares one result type, `Answer`, so both backends feed the same
 formatting layer:
@@ -175,23 +263,9 @@ class Answer:
 The MCP backend produces a bare `Answer(body=...)`. The reverse backend fills in
 summary, references, sources, stats, and query_id — all carried by `--json`.
 
-Source layout:
+### DeepWiki backends in detail
 
-```
-src/repowiki/
-  cli.py      # Typer commands, routing, REPL, retry
-  client.py   # MCP backend (DeepWikiClient) + error taxonomy
-  devin.py    # reverse backend (DevinClient): REST + WebSocket + polling
-  model.py    # Answer / Reference / SourceFile
-  output.py   # formatting, page filter, citation fill, Mermaid-adjacent render
-  codemap.py  # codemap JSON -> Mermaid flowchart
-  repo.py     # repo reference normalization
-  save.py     # --save file naming and append
-```
-
-## Backends in detail
-
-### MCP backend (`client.py`)
+**MCP backend (`services/deepwiki/client.py`)**
 
 - Endpoint: `DEEPWIKI_MCP_URL`, default `https://mcp.deepwiki.com/mcp`.
 - Speaks **Streamable HTTP** (the SSE endpoint is deprecated).
@@ -203,7 +277,7 @@ src/repowiki/
   - The initial connect is retried once on failure; a mid-session drop is
     recovered by reopening once.
 
-### Reverse backend (`devin.py`)
+**Reverse backend (`services/deepwiki/devin.py`)**
 
 - Endpoint: `DEEPWIKI_API_URL`, default `https://api.devin.ai`.
 - Answer flow (`ask`):
@@ -245,7 +319,7 @@ Management endpoints:
 | `POST` | `/ada/warm_public_repo?repo_name=` | `warm` |
 | `GET` | `/ada/query/{query_id}` | `get` |
 
-## Error handling and exit codes
+### DeepWiki error handling and exit codes
 
 Exceptions are classified into a small taxonomy and mapped to an exit code:
 
@@ -267,7 +341,7 @@ With `--json`, errors go to **stderr** as a single line:
 {"error": "Could not connect to DeepWiki server...", "kind": "connection"}
 ```
 
-## Streaming, retry, and citations
+### DeepWiki streaming, retry, and citations
 
 This applies to the **reverse** backend only.
 
@@ -305,64 +379,14 @@ citation are model-estimated, so treat them as approximate rather than exact:
 The CLI passes these numbers through unchanged; it does not offset or
 re-interpret them.
 
-## Repo formats
-
-`REPO` accepts any of:
-
-- `owner/repo`
-- `github.com/owner/repo`
-- `www.github.com/owner/repo`
-- `https://github.com/owner/repo` (optionally with `/tree/main` or `.git`)
-
-Everything is normalized to `owner/repo`.
-
-## JSON output
-
-Main commands emit an envelope with `repo` and `command`:
-
-```json
-{
-  "repo": "facebook/react",
-  "command": "ask",
-  "question": "What is Fiber?",
-  "answer": "..."
-}
-```
-
-`ask` additionally includes `summary`, `references`, `sources`, `stats`, and
-`query_id` when the reverse backend provides them. Management commands
-(`list` / `status` / `warm` / `get`) omit `repo` and use `command` + fields
-only. Errors go to stderr as `{"error": ..., "kind": ...}`.
-
-## Saving (`--save`)
-
-- Bare `--save` auto-names the file `repowiki-<owner>-<repo>_<timestamp>.md` in
-  the current directory.
-- `--save PATH` writes to (and appends to) the given path, creating parent
-  directories.
-- In interactive mode all answers in the session append to one file; single-shot
-  answers append when the file already exists.
-- Combine with `--json` to keep stdout as JSON while writing Markdown to the file.
-
-## Mermaid
+### DeepWiki Mermaid
 
 `--mode codemap` returns a codemap (a `{"traces": [...]}` JSON blob). `--mermaid`
 renders it as a `flowchart TB` with per-trace subgraphs and color styling. Paste
 the output into mermaid.live, GitHub, or VS Code to view it. If the answer is
 not a codemap, `--mermaid` warns and prints the plain text.
 
-## Environment variables
-
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `DEEPWIKI_MCP_URL` | MCP endpoint | `https://mcp.deepwiki.com/mcp` |
-| `DEEPWIKI_API_URL` | reverse backend endpoint | `https://api.devin.ai` |
-| `DEEPWIKI_REPL_RETRIES` | reverse REPL retry attempts | `4` |
-| `DEEPWIKI_TIMEOUT` | reverse answer timeout in seconds | `120` (`300` for `--mode deep`) |
-| `REPOWIKI_MOCK_TEXT` | mock MCP result (tests) | — |
-| `REPOWIKI_DEVIN_MOCK` | mock reverse answer (tests) | — |
-
-## Usage recipes
+### DeepWiki usage recipes
 
 The combinations below are grouped by intent. All assume `facebook/react` as the
 repo unless noted.
@@ -449,32 +473,6 @@ repowiki-cli deepwiki get <query-id> --sources
 repowiki-cli deepwiki get <query-id> --mermaid
 ```
 
-**CodeWiki — read documentation (Google Code Wiki)**
-
-```bash
-repowiki-cli codewiki structure facebook/react
-repowiki-cli codewiki contents vercel/next.js
-repowiki-cli codewiki contents vercel/next.js --page "Getting Started"   # one section only
-repowiki-cli codewiki contents vercel/next.js --rich                      # rendered
-```
-
-**CodeWiki — ask**
-
-```bash
-repowiki-cli codewiki ask facebook/react "What is Fiber?"
-repowiki-cli codewiki ask facebook/react "What is Fiber?" --rich
-repowiki-cli codewiki ask facebook/react                                    # interactive (type /exit to quit)
-```
-
-**CodeWiki — machine-readable and save**
-
-```bash
-repowiki-cli codewiki structure facebook/react --json
-repowiki-cli codewiki contents vercel/next.js --json
-repowiki-cli codewiki ask facebook/react "What is Fiber?" --json
-repowiki-cli codewiki ask facebook/react "What is Fiber?" --save notes/answers.md   # path required (no bare --save)
-```
-
 **Scripting with exit codes**
 
 ```bash
@@ -487,7 +485,7 @@ case $? in
 esac
 ```
 
-## DeepWiki MCP server
+### DeepWiki MCP server
 
 The official [DeepWiki MCP server](https://docs.devin.ai/work-with-devin/deepwiki-mcp)
 is free and requires no auth for public repos. It exposes two wire protocols:
@@ -505,7 +503,7 @@ Private repositories are out of scope for `repowiki-cli`; use the
 API key. The full documentation index lives at
 <https://docs.devin.ai/llms.txt>.
 
-## Related tools
+### DeepWiki related tools
 
 These are reference/alternative CLIs for the same space — worth consulting
 before re-implementing anything:
@@ -631,12 +629,14 @@ With `QUESTION`, `ask` answers once and exits. Without it, `ask` starts an
 interactive REPL — type one question per line and `/exit` (or `/quit`/`/q`) to
 quit.
 
-Unlike the other commands, `ask` requires an auth token: log in to zread.ai and
-copy the token from the localStorage key `CGX_AUTH_STORAGE`, then set the
-`ZREAD_TOKEN` environment variable.
+Unlike the other commands, `ask` requires an auth token (a JWT). Log in to
+zread.ai, open the browser DevTools console, and run
+`JSON.parse(localStorage.getItem("CGX_AUTH_STORAGE")).state.token` — this returns
+the token. Set it as the `ZREAD_TOKEN` environment variable.
 
 - `--model MODEL` — model (default `glm-5.1`, or the `ZREAD_MODEL` environment
-  variable).
+  variable). This maps to the web UI's `CGX_CHAT_MODEL` (e.g. `glm-5.1`,
+  `claude-sonnet-4.6`).
 - `--lang zh|en` — language.
 - `--rich` — render the answer's Markdown with `rich`.
 - `--json` — emit a JSON envelope. Ignored in interactive mode.
@@ -681,9 +681,10 @@ Exports the whole wiki as Markdown (`NN-slug.md` files) plus `llms.txt` and
 
 ### `zread submit`
 
-Submits a repository for indexing on zread.ai. Requires a token: log in to
-zread.ai and copy the token from the localStorage key `CGX_AUTH_STORAGE`, then
-set the `ZREAD_TOKEN` environment variable. Without it, `submit` prints a
+Submits a repository for indexing on zread.ai. Requires a token (a JWT): log in
+to zread.ai, run
+`JSON.parse(localStorage.getItem("CGX_AUTH_STORAGE")).state.token` in the DevTools
+console, and set the result as `ZREAD_TOKEN`. Without it, `submit` prints a
 warning and skips.
 
 - `--json` — emit a JSON envelope.

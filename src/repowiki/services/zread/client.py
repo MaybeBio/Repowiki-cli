@@ -62,6 +62,19 @@ def _is_cert_error(exc: BaseException) -> bool:
     return False
 
 
+def _error_detail(resp: httpx.Response) -> str:
+    try:
+        data = resp.json()
+    except ValueError:
+        data = None
+    if isinstance(data, dict):
+        for key in ("msg", "detail", "message", "error"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return resp.text.strip()[:500]
+
+
 def _unwrap(resp: httpx.Response) -> object:
     try:
         result = resp.json()
@@ -178,7 +191,12 @@ class ZreadClient:
                     raise ZreadConnectionError(
                         f"Zread returned HTTP {resp.status_code} after {self._retries} attempts"
                     )
-                resp.raise_for_status()
+                if not resp.is_success:
+                    detail = _error_detail(resp)
+                    raise ZreadError(
+                        f"Zread returned HTTP {resp.status_code} for {url}"
+                        + (f": {detail}" if detail else "")
+                    )
                 return resp
         raise ZreadError(f"Zread request failed after {self._retries} attempts")
 
@@ -215,12 +233,14 @@ class ZreadClient:
     async def submit(self, repo: str) -> dict:
         if not self._token:
             raise ZreadError(
-                "ZREAD_TOKEN is required for submit. Set it (log in to zread.ai and "
-                "copy the token from localStorage CGX_AUTH_STORAGE) or export ZREAD_TOKEN."
+                "ZREAD_TOKEN is required for submit. Get it from zread.ai after login: "
+                "run JSON.parse(localStorage.getItem('CGX_AUTH_STORAGE')).state.token in "
+                "the DevTools console, then export ZREAD_TOKEN."
             )
         resp = await self._request(
             "POST", f"{BASE}/api/v1/public/repo/submit", timeout=30.0,
-            json_body={"name_or_path": repo},
+            # The endpoint 400s without notification_email; upstream sends this placeholder.
+            json_body={"name_or_path": repo, "notification_email": "example@zread.ai"},
             headers=self._headers({"Authorization": f"Bearer {self._token}"}),
         )
         return _unwrap(resp) or {}
@@ -270,8 +290,9 @@ class ZreadClient:
     async def ask(self, repo: str, question: str) -> str:
         if not self._token:
             raise ZreadError(
-                "ZREAD_TOKEN is required for ask. Set it (log in to zread.ai and "
-                "copy the token from localStorage CGX_AUTH_STORAGE) or export ZREAD_TOKEN."
+                "ZREAD_TOKEN is required for ask. Get it from zread.ai after login: "
+                "run JSON.parse(localStorage.getItem('CGX_AUTH_STORAGE')).state.token in "
+                "the DevTools console, then export ZREAD_TOKEN."
             )
         info = await self.repo_info(repo)
         repo_id = str(info.get("repo_id") or "")
@@ -320,6 +341,12 @@ class ZreadClient:
                     raise ZreadChallengeError(f"Zread returned HTTP {resp.status_code}")
                 if resp.status_code == 404:
                     raise ZreadNotFoundError(f"talk not found: {talk_id}")
-                resp.raise_for_status()
+                if not resp.is_success:
+                    await resp.aread()
+                    detail = _error_detail(resp)
+                    raise ZreadError(
+                        f"Zread returned HTTP {resp.status_code} for {url}"
+                        + (f": {detail}" if detail else "")
+                    )
                 lines = [line async for line in resp.aiter_lines()]
         return _parse_sse_body(lines)
