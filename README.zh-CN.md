@@ -433,6 +433,7 @@ repowiki-cli codewiki contents vercel/next.js --rich                      # 富�
 ```bash
 repowiki-cli codewiki ask facebook/react "What is Fiber?"
 repowiki-cli codewiki ask facebook/react "What is Fiber?" --rich
+repowiki-cli codewiki ask facebook/react                                    # 交互式（输入 /exit 退出）
 ```
 
 **CodeWiki — 机器可读与保存**
@@ -492,7 +493,7 @@ claude mcp add -s user -t http deepwiki https://mcp.deepwiki.com/mcp
 ```bash
 repowiki-cli codewiki structure REPO [--json]
 repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
-repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save PATH]
+repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
 ```
 
 快速上手：
@@ -521,13 +522,15 @@ repowiki-cli codewiki ask facebook/react "What is Fiber?"
 ### `codewiki ask`
 
 ```bash
-repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save PATH]
+repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
 ```
 
-`QUESTION` 为必填——`ask` 是单次问答（没有交互式 REPL）。
+带 `QUESTION` 则单次回答后退出；不带则进入交互式 REPL——每行一个问题，输入
+`/exit`（或 `/quit`/`/q`）退出。CodeWiki 的 `ask` 是无状态的，每个问题彼此独立
+（不接续线程）。
 
 - `--rich` — 用 `rich` 渲染答案的 Markdown。
-- `--json` — 输出 JSON 信封。
+- `--json` — 输出 JSON 信封；交互模式下忽略。
 - `--save PATH` — 把答案保存为 Markdown 文件（见「保存」）。需要指定路径
   （CodeWiki 的 `ask` 不支持裸 `--save` 自动命名）。
 

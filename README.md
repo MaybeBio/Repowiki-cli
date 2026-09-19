@@ -463,6 +463,7 @@ repowiki-cli codewiki contents vercel/next.js --rich                      # rend
 ```bash
 repowiki-cli codewiki ask facebook/react "What is Fiber?"
 repowiki-cli codewiki ask facebook/react "What is Fiber?" --rich
+repowiki-cli codewiki ask facebook/react                                    # interactive (type /exit to quit)
 ```
 
 **CodeWiki — machine-readable and save**
@@ -528,7 +529,7 @@ requires **no auth** — it does not support private repos.
 ```bash
 repowiki-cli codewiki structure REPO [--json]
 repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
-repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save PATH]
+repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
 ```
 
 Quick start:
@@ -558,13 +559,16 @@ Prints the full CodeWiki documentation for a repository, which can be large.
 ### `codewiki ask`
 
 ```bash
-repowiki-cli codewiki ask REPO QUESTION [--rich] [--json] [--save PATH]
+repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
 ```
 
-`QUESTION` is required — `ask` is single-shot (there is no interactive REPL).
+With `QUESTION`, `ask` answers once and exits. Without it, `ask` starts an
+interactive REPL — type one question per line and `/exit` (or `/quit`/`/q`) to
+quit. CodeWiki's `ask` is stateless, so each question is independent (no thread
+continuation).
 
 - `--rich` — render the answer's Markdown with `rich`.
-- `--json` — emit a JSON envelope.
+- `--json` — emit a JSON envelope. Ignored in interactive mode.
 - `--save PATH` — save the answer to a Markdown file (see *Saving*). A path is
   required (CodeWiki's `ask` does not auto-name on a bare `--save`).
 
