@@ -1,0 +1,184 @@
+import json
+import ssl
+
+import httpx
+import pytest
+
+from repowiki.services.zread.client import (
+    ZreadClient,
+    ZreadChallengeError,
+    ZreadConnectionError,
+    ZreadError,
+    ZreadNotFoundError,
+    _parse_sse_body,
+)
+from repowiki.shared.async_ import run_async
+
+
+async def _no_sleep(_delay: float) -> None:
+    return None
+
+
+def _flight_html(pages=1):
+    node = {
+        "wiki": {
+            "info": {"wiki_id": "w1"},
+            "pages": [
+                {"page_id": f"p{i}", "slug": f"s{i}", "topic": f"T{i}", "order": i}
+                for i in range(pages)
+            ],
+        }
+    }
+    payload_str = json.dumps({"x": node})
+    return f'<script>self.__next_f.push([1,{json.dumps(payload_str)}])</script>'
+
+
+def test_repo_info_hits_repo_endpoint():
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["locale"] = request.headers.get("x-locale")
+        return httpx.Response(200, json={"code": 0, "data": {"repo_id": "r1", "wiki_id": "w1"}})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), lang="zh")
+    info = run_async(client.repo_info("o/r"))
+    assert info["repo_id"] == "r1"
+    assert "api/v1/repo/github/o/r" in seen["url"]
+    assert seen["locale"] == "zh"
+
+
+def test_retries_on_transient_status(monkeypatch):
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(504)
+        return httpx.Response(200, json={"code": 0, "data": []})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), retries=5)
+    assert run_async(client.trending()) == []
+    assert calls["n"] == 3
+
+
+def test_challenge_raises_on_403():
+    def handler(request):
+        return httpx.Response(403)
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(ZreadChallengeError):
+        run_async(client.trending())
+
+
+def test_not_found_raises_on_404():
+    def handler(request):
+        return httpx.Response(404)
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(ZreadNotFoundError):
+        run_async(client.trending())
+
+
+def test_envelope_error_raises():
+    def handler(request):
+        return httpx.Response(200, json={"code": 1, "msg": "boom"})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(ZreadError, match="boom"):
+        run_async(client.trending())
+
+
+def test_outline_parses_flight():
+    def handler(request):
+        return httpx.Response(200, text=_flight_html(2))
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    _, pages = run_async(client.outline("o/r"))
+    assert [p.slug for p in pages] == ["s0", "s1"]
+
+
+def test_page_sends_rsc_header():
+    seen = {}
+
+    def handler(request):
+        seen["rsc"] = request.headers.get("RSC")
+        body = "---\nslug: s0\n---\n\n# Body"
+        b = body.encode("utf-8")
+        payload = f"0:T{len(b):x},{body}"
+        html = f'<script>self.__next_f.push([1,{json.dumps(payload)}])</script>'
+        return httpx.Response(200, text=html)
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    md = run_async(client.page("o/r", "s0"))
+    assert seen["rsc"] == "1"
+    assert "# Body" in md
+    assert "slug:" not in md
+
+
+def test_parse_sse_body_buffers_round_finish():
+    lines = [
+        "event: answer",
+        'data: {"text": "hel"}',
+        "event: round_finish",
+        'data: {"text": "hello world"}',
+        "event: finish",
+        "data: {}",
+    ]
+    assert _parse_sse_body(lines) == "hello world"
+
+
+def test_parse_sse_body_errors_on_error_event():
+    with pytest.raises(ZreadError, match="error"):
+        _parse_sse_body(["event: error", "data: {}"])
+
+
+def test_ask_requires_token():
+    client = ZreadClient(transport=httpx.MockTransport(lambda r: httpx.Response(200)), token=None)
+    with pytest.raises(ZreadError, match="ZREAD_TOKEN"):
+        run_async(client.ask("o/r", "q?"))
+
+
+def test_ask_flow(monkeypatch):
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+    seen = {}
+
+    sse = (
+        'event: answer\ndata: {"text": "hel"}\n\n'
+        'event: round_finish\ndata: {"text": "hello world"}\n\n'
+        'event: finish\ndata: {}\n\n'
+    )
+
+    def handler(request):
+        url = str(request.url)
+        if url.endswith("/api/v1/talk"):
+            return httpx.Response(200, json={"code": 0, "data": {"talk_id": "t1"}})
+        if "/message" in url:
+            seen["auth"] = request.headers.get("Authorization")
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
+        if "repo/github" in url:
+            return httpx.Response(200, json={"code": 0, "data": {"repo_id": "r1", "wiki_id": "w1"}})
+        return httpx.Response(200, text=_flight_html(1))
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", model="glm-5.1")
+    answer = run_async(client.ask("o/r", "q?"))
+    assert answer == "hello world"
+    assert seen["auth"] == "Bearer tok"
+    assert seen["body"]["model"] == "glm-5.1"
+    assert seen["body"]["context"]["wiki"] == {"page_id": "p0", "wiki_id": "w1"}
+
+
+def test_is_cert_error_detects_ssl_verification():
+    from repowiki.services.zread.client import _is_cert_error
+
+    cert = ssl.SSLCertVerificationError(1, "certificate verify failed")
+    exc = httpx.ConnectError("certificate verify failed")
+    exc.__cause__ = cert
+    assert _is_cert_error(exc)
+    assert not _is_cert_error(httpx.ConnectError("connection refused"))
