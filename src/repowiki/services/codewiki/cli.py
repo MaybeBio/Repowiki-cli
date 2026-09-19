@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import NoReturn, Optional
 
 import typer
@@ -19,6 +20,7 @@ from repowiki.shared.output import (
     filter_page,
     format_answer,
     format_error_json,
+    format_header,
     format_json,
     format_result,
     render_markdown as render_rich,
@@ -80,6 +82,65 @@ def _emit(
         typer.echo(rendered)
 
 
+def _repl_prompt() -> str:
+    """Return the REPL input prompt, colored only on a terminal."""
+    if not sys.stdout.isatty():
+        return ">> "
+    return typer.style(">> ", fg=typer.colors.CYAN, bold=True)
+
+
+def _print_error(exc: Exception) -> None:
+    if isinstance(exc, CodeWikiError):
+        message = str(exc)
+    else:
+        message = f"Unexpected error: {exc}"
+    typer.secho(f"Error: {message}", fg=typer.colors.RED, err=True)
+
+
+def _append_save(
+    path: Optional[str], repo: str, question: str, answer: str
+) -> None:
+    if path is None:
+        return
+    try:
+        append_entry(path, repo, question, answer)
+    except OSError as exc:
+        typer.secho(
+            f"Warning: could not save to {path}: {exc}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+
+async def _repl(resolved: str, rich: bool, save_path: Optional[str]) -> None:
+    prompt = _repl_prompt()
+    client = CodeWikiClient()
+    while True:
+        try:
+            line = input(prompt)
+        except (EOFError, KeyboardInterrupt):
+            typer.echo()
+            break
+        q = line.strip()
+        if not q:
+            continue
+        if q in ("/exit", "/quit", "/q"):
+            break
+        try:
+            with status("Thinking..."):
+                answer = await client.ask(resolved, q)
+        except Exception as exc:
+            _print_error(exc)
+            continue
+        _append_save(save_path, resolved, q, answer)
+        typer.echo()
+        if rich:
+            render_rich(answer.strip())
+        else:
+            typer.echo(answer.strip())
+        typer.echo()
+
+
 @codewiki_app.command()
 def structure(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
@@ -136,30 +197,47 @@ def contents(
 @codewiki_app.command()
 def ask(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
-    question: str = typer.Argument(..., help="Question to ask"),
+    question: Optional[str] = typer.Argument(
+        None, help="Question (omit for interactive mode)"
+    ),
     rich: bool = typer.Option(False, "--rich", help="Render Markdown with rich"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
     save: Optional[str] = typer.Option(
         None, "--save", help="Save the answer to a Markdown file (appends)."
     ),
 ) -> None:
-    """Ask a question about a repository."""
+    """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo, json)
-    if (mock := _mock_text()) is not None:
-        answer = Answer(body=mock)
-    else:
-        client = CodeWikiClient()
-        try:
-            with status("Thinking..."):
-                answer = Answer(body=run_async(client.ask(resolved, question)))
-        except Exception as exc:
-            _handle_exception(exc, json)
+    if question is not None:
+        if not question.strip():
+            _fail("Question must not be empty.", "invalid_input", json)
+        if (mock := _mock_text()) is not None:
+            answer = Answer(body=mock)
+        else:
+            client = CodeWikiClient()
+            try:
+                with status("Thinking..."):
+                    answer = Answer(body=run_async(client.ask(resolved, question)))
+            except Exception as exc:
+                _handle_exception(exc, json)
+        if json:
+            typer.echo(format_json(resolved, "ask", question=question, answer=answer.body))
+        else:
+            _emit(resolved, "ask", format_answer(answer), rich, False)
+        _append_save(save, resolved, question, answer.body)
+        return
+
     if json:
-        typer.echo(format_json(resolved, "ask", question=question, answer=answer.body))
-    else:
-        _emit(resolved, "ask", format_answer(answer), rich, False)
-    if save is not None:
-        try:
-            append_entry(save, resolved, question, answer.body)
-        except OSError as exc:
-            typer.secho(f"Warning: could not save to {save}: {exc}", fg=typer.colors.YELLOW, err=True)
+        typer.secho(
+            "Warning: --json has no effect in interactive mode.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    typer.echo(format_header("CodeWiki", resolved, "ask"))
+    typer.echo()
+    typer.echo("Ask a question, or /exit to quit.")
+    typer.echo()
+    try:
+        run_async(_repl(resolved, rich, save))
+    except Exception as exc:
+        _handle_exception(exc, False)

@@ -64,3 +64,52 @@ def test_contents_page_filters_section(monkeypatch):
     assert result.exit_code == 0
     assert "## Section A" in result.output
     assert "Example Overview" not in result.output
+
+
+def test_ask_repl(monkeypatch):
+    inputs = iter(["What is Fiber?", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+    class FakeClient:
+        async def ask(self, repo, question):
+            return f"answer to {question}"
+
+    monkeypatch.setattr("repowiki.services.codewiki.cli.CodeWikiClient", FakeClient)
+    result = runner.invoke(codewiki_app, ["ask", "facebook/react"])
+    assert result.exit_code == 0
+    assert "answer to What is Fiber?" in result.output
+
+
+def test_ask_repl_uses_prompt(monkeypatch):
+    prompts = []
+    monkeypatch.setattr(
+        "builtins.input", lambda prompt="": prompts.append(prompt) or "/exit"
+    )
+
+    class FakeClient:
+        async def ask(self, repo, question):
+            return "answer"
+
+    monkeypatch.setattr("repowiki.services.codewiki.cli.CodeWikiClient", FakeClient)
+    result = runner.invoke(codewiki_app, ["ask", "facebook/react"])
+    assert result.exit_code == 0
+    assert prompts == [">> "]
+
+
+def test_ask_repl_warns_json(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda prompt="": "/exit")
+
+    class FakeClient:
+        async def ask(self, repo, question):
+            return "answer"
+
+    monkeypatch.setattr("repowiki.services.codewiki.cli.CodeWikiClient", FakeClient)
+    result = runner.invoke(codewiki_app, ["ask", "facebook/react", "--json"])
+    assert result.exit_code == 0
+    assert "--json has no effect in interactive mode" in result.output
+
+
+def test_ask_empty_question_fails(monkeypatch):
+    monkeypatch.setenv("REPOWIKI_CODEWIKI_MOCK", "the answer")
+    result = runner.invoke(codewiki_app, ["ask", "facebook/react", ""])
+    assert result.exit_code != 0
