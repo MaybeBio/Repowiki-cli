@@ -449,6 +449,31 @@ repowiki-cli deepwiki get <query-id> --sources
 repowiki-cli deepwiki get <query-id> --mermaid
 ```
 
+**CodeWiki — read documentation (Google Code Wiki)**
+
+```bash
+repowiki-cli codewiki structure facebook/react
+repowiki-cli codewiki contents vercel/next.js
+repowiki-cli codewiki contents vercel/next.js --page "Getting Started"   # one section only
+repowiki-cli codewiki contents vercel/next.js --rich                      # rendered
+```
+
+**CodeWiki — ask**
+
+```bash
+repowiki-cli codewiki ask facebook/react "What is Fiber?"
+repowiki-cli codewiki ask facebook/react "What is Fiber?" --rich
+```
+
+**CodeWiki — machine-readable and save**
+
+```bash
+repowiki-cli codewiki structure facebook/react --json
+repowiki-cli codewiki contents vercel/next.js --json
+repowiki-cli codewiki ask facebook/react "What is Fiber?" --json
+repowiki-cli codewiki ask facebook/react "What is Fiber?" --save notes/answers.md   # path required (no bare --save)
+```
+
 **Scripting with exit codes**
 
 ```bash

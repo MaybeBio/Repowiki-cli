@@ -419,6 +419,31 @@ repowiki-cli deepwiki get <query-id> --sources
 repowiki-cli deepwiki get <query-id> --mermaid
 ```
 
+**CodeWiki — 读文档（Google Code Wiki）**
+
+```bash
+repowiki-cli codewiki structure facebook/react
+repowiki-cli codewiki contents vercel/next.js
+repowiki-cli codewiki contents vercel/next.js --page "Getting Started"   # 只看一个 section
+repowiki-cli codewiki contents vercel/next.js --rich                      # 富文本渲染
+```
+
+**CodeWiki — 提问**
+
+```bash
+repowiki-cli codewiki ask facebook/react "What is Fiber?"
+repowiki-cli codewiki ask facebook/react "What is Fiber?" --rich
+```
+
+**CodeWiki — 机器可读与保存**
+
+```bash
+repowiki-cli codewiki structure facebook/react --json
+repowiki-cli codewiki contents vercel/next.js --json
+repowiki-cli codewiki ask facebook/react "What is Fiber?" --json
+repowiki-cli codewiki ask facebook/react "What is Fiber?" --save notes/answers.md   # 需指定路径（不支持裸 --save）
+```
+
 **脚本中利用退出码**
 
 ```bash
