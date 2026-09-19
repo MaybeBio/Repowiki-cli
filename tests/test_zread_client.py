@@ -105,6 +105,30 @@ def test_envelope_error_raises():
         run_async(client.trending())
 
 
+def test_submit_requires_token():
+    client = ZreadClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200)), token=None
+    )
+    with pytest.raises(ZreadError, match="ZREAD_TOKEN"):
+        run_async(client.submit("o/r"))
+
+
+def test_submit_hits_endpoint_with_bearer():
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content)
+        seen["auth"] = request.headers.get("Authorization")
+        return httpx.Response(200, json={"code": 0, "data": {"ok": True}})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok")
+    assert run_async(client.submit("o/r")) == {"ok": True}
+    assert "api/v1/public/repo/submit" in seen["url"]
+    assert seen["body"] == {"name_or_path": "o/r"}
+    assert seen["auth"] == "Bearer tok"
+
+
 def test_outline_parses_flight():
     def handler(request):
         return httpx.Response(200, text=_flight_html(2))

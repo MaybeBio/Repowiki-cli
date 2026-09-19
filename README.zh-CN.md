@@ -537,8 +537,8 @@ repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
 ## Zread
 
 [zread.ai](https://zread.ai) 是第三个 wiki 服务，挂在 `zread` 命名空间下。Zread
-提供预先生成的文档，**只读取公开仓库**，所有读取命令都**无需鉴权**；唯一的例外
-是 `ask`，它需要一个 token（见下文）。
+提供预先生成的文档，**只读取公开仓库**，所有读取命令都**无需鉴权**；`ask` 和
+`submit` 这两个命令需要一个 token（见下文）。
 
 ```bash
 repowiki-cli zread structure REPO [--lang zh|en] [--json]
@@ -636,7 +636,9 @@ repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save
 
 ### `zread submit`
 
-向 zread.ai 提交仓库进行索引。
+向 zread.ai 提交仓库进行索引。需要一个 token：登录 zread.ai，从 localStorage 的
+`CGX_AUTH_STORAGE` 键中复制 token，然后设置 `ZREAD_TOKEN` 环境变量。未设置时，
+`submit` 会打印警告并跳过。
 
 - `--json` — 输出 JSON 信封。
 

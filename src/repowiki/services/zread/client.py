@@ -213,9 +213,15 @@ class ZreadClient:
         return _unwrap(resp) or {}
 
     async def submit(self, repo: str) -> dict:
+        if not self._token:
+            raise ZreadError(
+                "ZREAD_TOKEN is required for submit. Set it (log in to zread.ai and "
+                "copy the token from localStorage CGX_AUTH_STORAGE) or export ZREAD_TOKEN."
+            )
         resp = await self._request(
             "POST", f"{BASE}/api/v1/public/repo/submit", timeout=30.0,
-            json_body={"name_or_path": repo}, headers=self._headers(),
+            json_body={"name_or_path": repo},
+            headers=self._headers({"Authorization": f"Bearer {self._token}"}),
         )
         return _unwrap(resp) or {}
 

@@ -576,8 +576,8 @@ continuation).
 
 [zread.ai](https://zread.ai) is a third wiki service, exposed under the `zread`
 namespace. Zread serves pre-generated docs for **public repositories**, and all
-read commands need **no auth**. The one exception is `ask`, which requires a
-token (see below).
+read commands need **no auth**. The commands `ask` and `submit` require a token
+(see below).
 
 ```bash
 repowiki-cli zread structure REPO [--lang zh|en] [--json]
@@ -681,7 +681,10 @@ Exports the whole wiki as Markdown (`NN-slug.md` files) plus `llms.txt` and
 
 ### `zread submit`
 
-Submits a repository for indexing on zread.ai.
+Submits a repository for indexing on zread.ai. Requires a token: log in to
+zread.ai and copy the token from the localStorage key `CGX_AUTH_STORAGE`, then
+set the `ZREAD_TOKEN` environment variable. Without it, `submit` prints a
+warning and skips.
 
 - `--json` — emit a JSON envelope.
 

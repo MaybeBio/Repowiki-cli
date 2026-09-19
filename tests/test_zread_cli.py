@@ -136,3 +136,26 @@ def test_cp_writes_files(monkeypatch, tmp_path):
     assert (tmp_path / "00-a.md").exists()
     assert (tmp_path / "llms.txt").exists()
     assert (tmp_path / "llms-full.txt").exists()
+
+
+def test_submit_skips_without_token(monkeypatch):
+    monkeypatch.delenv("ZREAD_TOKEN", raising=False)
+    result = runner.invoke(zread_app, ["submit", "owner/example"])
+    assert result.exit_code == 0
+    assert "ZREAD_TOKEN is not set" in result.output
+
+
+def test_submit_with_token(monkeypatch):
+    monkeypatch.setenv("ZREAD_TOKEN", "tok")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def submit(self, repo):
+            return {"ok": True}
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["submit", "owner/example"])
+    assert result.exit_code == 0
+    assert "Submitted owner/example" in result.output

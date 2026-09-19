@@ -457,8 +457,15 @@ def submit(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
 ) -> None:
-    """Submit a repository for indexing on zread.ai."""
+    """Submit a repository for indexing on zread.ai (requires ZREAD_TOKEN)."""
     resolved = _resolve_repo(repo, json)
+    if not os.environ.get("ZREAD_TOKEN"):
+        message = "ZREAD_TOKEN is not set; skipping submit. Set it to submit a repo for indexing."
+        if json:
+            typer.echo(format_error_json("missing_token", message), err=True)
+        else:
+            typer.secho(f"Warning: {message}", fg=typer.colors.YELLOW, err=True)
+        return
     client = _make_client(None)
     try:
         with status("Submitting..."):
