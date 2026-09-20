@@ -84,31 +84,76 @@ def _unwrap(resp: httpx.Response) -> object:
     return result.get("data")
 
 
-def _parse_sse_body(lines: list[str]) -> str:
-    event = None
-    finished: list[str] = []
-    chunks: list[str] = []
-    for line in lines:
+class _SSEParser:
+    """Incrementally parse the talk SSE stream.
+
+    ``answer`` events carry incremental chunks — ``data.text`` is the answer and
+    ``data.reasoning_content`` is the model's thinking trace (streamed first, then
+    empty during the answer phase). ``round_finish`` carries the complete text,
+    ``finish`` ends the stream. ``on_chunk`` / ``on_reasoning``, when given, are
+    invoked with each ``answer`` chunk as it arrives.
+    """
+
+    def __init__(self, on_chunk=None, on_reasoning=None) -> None:
+        self._on_chunk = on_chunk
+        self._on_reasoning = on_reasoning
+        self._event: str | None = None
+        self._finished: list[str] = []
+        self._chunks: list[str] = []
+        self._reasoning: list[str] = []
+        self._message_id = ""
+
+    def feed(self, line: str) -> bool:
+        """Consume one raw SSE line; return True when the stream is done."""
         line = line.strip()
         if not line:
-            continue
+            return False
         if line.startswith("event:"):
-            event = line[6:].strip()
-            if event == "finish":
-                break
-            if event == "error":
+            self._event = line[6:].strip()
+            if self._event == "finish":
+                return True
+            if self._event == "error":
                 raise ZreadError("talk stream returned an error event")
         elif line.startswith("data:"):
             try:
                 data = json.loads(line[5:].strip())
             except json.JSONDecodeError:
-                continue
-            if event == "round_finish":
-                finished.append(data.get("text", ""))
-            elif event == "answer":
-                chunks.append(data.get("text", ""))
-    text = "\n".join(finished) or "".join(chunks)
-    return text.strip()
+                return False
+            if data.get("id"):
+                self._message_id = data["id"]
+            if self._event == "round_finish":
+                self._finished.append(data.get("text", ""))
+            elif self._event == "answer":
+                reasoning = data.get("reasoning_content", "")
+                if reasoning:
+                    self._reasoning.append(reasoning)
+                    if self._on_reasoning is not None:
+                        self._on_reasoning(reasoning)
+                text = data.get("text", "")
+                self._chunks.append(text)
+                if self._on_chunk is not None and text:
+                    self._on_chunk(text)
+        return False
+
+    @property
+    def text(self) -> str:
+        return ("\n".join(self._finished) or "".join(self._chunks)).strip()
+
+    @property
+    def reasoning(self) -> str:
+        return "".join(self._reasoning).strip()
+
+    @property
+    def message_id(self) -> str:
+        return self._message_id
+
+
+def _parse_sse_body(lines: list[str], on_chunk=None, on_reasoning=None) -> str:
+    parser = _SSEParser(on_chunk, on_reasoning)
+    for line in lines:
+        if parser.feed(line):
+            break
+    return parser.text
 
 
 class ZreadClient:
@@ -349,7 +394,18 @@ class ZreadClient:
             raise ZreadNotFoundError(f"no wiki_id for {repo}")
         return wiki_id
 
-    async def ask(self, repo: str, question: str) -> str:
+    async def ask(self, repo: str, question: str, on_chunk=None, on_reasoning=None) -> str:
+        if not self._token:
+            raise ZreadError(
+                "ZREAD_TOKEN is required for ask. Get it from zread.ai after login: "
+                "run JSON.parse(localStorage.getItem('CGX_AUTH_STORAGE')).state.token in "
+                "the DevTools console, then export ZREAD_TOKEN."
+            )
+        talk = await self.start_talk(repo)
+        return await talk.ask(question, on_chunk=on_chunk, on_reasoning=on_reasoning)
+
+    async def start_talk(self, repo: str) -> "ZreadTalk":
+        """Resolve a repo and open a new talk thread (``talk_id``)."""
         if not self._token:
             raise ZreadError(
                 "ZREAD_TOKEN is required for ask. Get it from zread.ai after login: "
@@ -365,7 +421,7 @@ class ZreadClient:
         if not pages:
             raise ZreadNotFoundError(f"{repo} has no wiki pages")
         talk_id = await self._create_talk()
-        return await self._send_message(talk_id, question, wiki_id, pages[0].page_id, repo_id)
+        return ZreadTalk(self, repo_id, wiki_id, pages[0].page_id, talk_id)
 
     async def _create_talk(self) -> str:
         resp = await self._request(
@@ -382,7 +438,8 @@ class ZreadClient:
     async def _send_message(
         self, talk_id: str, question: str,
         wiki_id: str, page_id: str, repo_id: str,
-    ) -> str:
+        on_chunk=None, on_reasoning=None, parent_message_id: str = "",
+    ) -> tuple[str, str]:
         url = f"{BASE}/api/v1/talk/{talk_id}/message"
         headers = self._headers({
             "Authorization": f"Bearer {self._token}",
@@ -392,7 +449,7 @@ class ZreadClient:
         if repo_id:
             context["repo"] = {"repo_id": repo_id}
         body = {
-            "parent_message_id": "",
+            "parent_message_id": parent_message_id,
             "query": question,
             "context": context,
             "model": self._model,
@@ -410,5 +467,37 @@ class ZreadClient:
                         f"Zread returned HTTP {resp.status_code} for {url}"
                         + (f": {detail}" if detail else "")
                     )
-                lines = [line async for line in resp.aiter_lines()]
-        return _parse_sse_body(lines)
+                parser = _SSEParser(on_chunk, on_reasoning)
+                async for line in resp.aiter_lines():
+                    if parser.feed(line):
+                        break
+        return parser.text, parser.message_id
+
+
+class ZreadTalk:
+    """A single threaded conversation against one repo.
+
+    Holds the ``talk_id`` and chains messages via ``parent_message_id`` (the id
+    of the previous assistant message, captured from the SSE ``id`` field) so
+    follow-up questions carry conversational memory.
+    """
+
+    def __init__(
+        self, client: "ZreadClient", repo_id: str, wiki_id: str, page_id: str, talk_id: str
+    ) -> None:
+        self._client = client
+        self._repo_id = repo_id
+        self._wiki_id = wiki_id
+        self._page_id = page_id
+        self._talk_id = talk_id
+        self._parent_message_id = ""
+
+    async def ask(self, question: str, on_chunk=None, on_reasoning=None) -> str:
+        answer, message_id = await self._client._send_message(
+            self._talk_id, question, self._wiki_id, self._page_id, self._repo_id,
+            on_chunk=on_chunk, on_reasoning=on_reasoning,
+            parent_message_id=self._parent_message_id,
+        )
+        if message_id:
+            self._parent_message_id = message_id
+        return answer

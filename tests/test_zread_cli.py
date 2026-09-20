@@ -156,17 +156,153 @@ def test_ask_repl(monkeypatch):
     inputs = iter(["What is Fiber?", "/exit"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
 
+    class FakeTalk:
+        async def ask(self, question, on_chunk=None, on_reasoning=None):
+            return f"answer to {question}"
+
     class FakeClient:
         def __init__(self, **kwargs):
             pass
 
-        async def ask(self, repo, question):
-            return f"answer to {question}"
+        async def start_talk(self, repo):
+            return FakeTalk()
 
     monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
     result = runner.invoke(zread_app, ["ask", "facebook/react"])
     assert result.exit_code == 0
     assert "answer to What is Fiber?" in result.output
+
+
+def test_ask_repl_reuses_talk(monkeypatch):
+    inputs = iter(["q1", "q2", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    started = {"n": 0}
+
+    class FakeTalk:
+        async def ask(self, question, on_chunk=None, on_reasoning=None):
+            return f"answer to {question}"
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def start_talk(self, repo):
+            started["n"] += 1
+            return FakeTalk()
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["ask", "facebook/react"])
+    assert result.exit_code == 0
+    assert "answer to q1" in result.output
+    assert "answer to q2" in result.output
+    assert started["n"] == 1
+
+
+def test_ask_repl_new_thread(monkeypatch):
+    inputs = iter(["q1", "/new", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    started = {"n": 0}
+
+    class FakeTalk:
+        async def ask(self, question, on_chunk=None, on_reasoning=None):
+            return f"answer to {question}"
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def start_talk(self, repo):
+            started["n"] += 1
+            return FakeTalk()
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["ask", "facebook/react"])
+    assert result.exit_code == 0
+    assert started["n"] == 2
+
+
+def test_ask_stream_emits_chunks(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def ask(self, repo, question, on_chunk=None, on_reasoning=None):
+            if on_chunk is not None:
+                on_chunk("hel")
+                on_chunk("lo")
+            return "hello"
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["ask", "owner/example", "q?", "--stream"])
+    assert result.exit_code == 0
+    assert "hello" in result.output
+
+
+def test_ask_stream_warns_json(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def ask(self, repo, question, on_chunk=None, on_reasoning=None):
+            return "hello"
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["ask", "owner/example", "q?", "--stream", "--json"])
+    assert result.exit_code == 0
+    assert "--stream has no effect with --json" in result.output
+
+
+def test_ask_show_reasoning(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def ask(self, repo, question, on_chunk=None, on_reasoning=None):
+            if on_reasoning is not None:
+                on_reasoning("think ")
+                on_reasoning("hard")
+            return "hello"
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["ask", "owner/example", "q?", "--show-reasoning"])
+    assert result.exit_code == 0
+    assert "think hard" in result.output
+    assert "hello" in result.output
+
+
+def test_ask_show_reasoning_warns_json(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def ask(self, repo, question, on_chunk=None, on_reasoning=None):
+            return "hello"
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["ask", "owner/example", "q?", "--show-reasoning", "--json"])
+    assert result.exit_code == 0
+    assert "--show-reasoning has no effect with --json" in result.output
+
+
+def test_ask_stream_show_reasoning(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def ask(self, repo, question, on_chunk=None, on_reasoning=None):
+            if on_reasoning is not None:
+                on_reasoning("think")
+            if on_chunk is not None:
+                on_chunk("hello")
+            return "hello"
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["ask", "owner/example", "q?", "--stream", "--show-reasoning"])
+    assert result.exit_code == 0
+    assert "reasoning:" in result.output
+    assert "answer:" in result.output
+    assert "think" in result.output
+    assert "hello" in result.output
 
 
 def test_cp_concurrency_zero_fails(monkeypatch):

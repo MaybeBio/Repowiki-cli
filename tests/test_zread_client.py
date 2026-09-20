@@ -297,6 +297,40 @@ def test_parse_sse_body_errors_on_error_event():
         _parse_sse_body(["event: error", "data: {}"])
 
 
+def test_parse_sse_body_streams_answer_chunks():
+    chunks = []
+    lines = [
+        "event: answer",
+        'data: {"text": "hel"}',
+        "event: answer",
+        'data: {"text": "lo"}',
+        "event: round_finish",
+        'data: {"text": "hello"}',
+        "event: finish",
+        "data: {}",
+    ]
+    assert _parse_sse_body(lines, on_chunk=chunks.append) == "hello"
+    assert chunks == ["hel", "lo"]
+
+
+def test_parse_sse_body_streams_reasoning():
+    reasoning = []
+    lines = [
+        "event: answer",
+        'data: {"text": "", "reasoning_content": "think "}',
+        "event: answer",
+        'data: {"text": "", "reasoning_content": "hard"}',
+        "event: answer",
+        'data: {"text": "ans", "reasoning_content": ""}',
+        "event: round_finish",
+        'data: {"text": "answer"}',
+        "event: finish",
+        "data: {}",
+    ]
+    assert _parse_sse_body(lines, on_reasoning=reasoning.append) == "answer"
+    assert reasoning == ["think ", "hard"]
+
+
 def test_ask_requires_token():
     client = ZreadClient(transport=httpx.MockTransport(lambda r: httpx.Response(200)), token=None)
     with pytest.raises(ZreadError, match="ZREAD_TOKEN"):
@@ -335,6 +369,67 @@ def test_ask_flow(monkeypatch):
     assert seen["auth"] == "Bearer tok"
     assert seen["body"]["model"] == "glm-5.1"
     assert seen["body"]["context"]["wiki"] == {"page_id": "p0", "wiki_id": "w1"}
+
+
+def test_ask_streams_chunks(monkeypatch):
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+
+    sse = (
+        'event: answer\ndata: {"text": "hel"}\n\n'
+        'event: answer\ndata: {"text": "lo"}\n\n'
+        'event: round_finish\ndata: {"text": "hello"}\n\n'
+        'event: finish\ndata: {}\n\n'
+    )
+
+    def handler(request):
+        url = str(request.url)
+        if url.endswith("/api/v1/talk"):
+            return httpx.Response(200, json={"code": 0, "data": {"talk_id": "t1"}})
+        if "/message" in url:
+            return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
+        if "repo/github" in url:
+            return httpx.Response(200, json={"code": 0, "data": {"repo_id": "r1", "wiki_id": "w1"}})
+        if "/api/v1/wiki/" in url:
+            return httpx.Response(200, json=_wiki_json(1))
+        return httpx.Response(404)
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok")
+    chunks = []
+    answer = run_async(client.ask("o/r", "q?", on_chunk=chunks.append))
+    assert answer == "hello"
+    assert chunks == ["hel", "lo"]
+
+
+def test_talk_threads_messages(monkeypatch):
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+    parents = []
+
+    def handler(request):
+        url = str(request.url)
+        if url.endswith("/api/v1/talk"):
+            return httpx.Response(200, json={"code": 0, "data": {"talk_id": "t1"}})
+        if "/message" in url:
+            parents.append(json.loads(request.content)["parent_message_id"])
+            sse = (
+                'event: round_finish\ndata: {"id": "m1", "text": "first"}\n\n'
+                'event: finish\ndata: {"id": "m1"}\n\n'
+            )
+            return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
+        if "repo/github" in url:
+            return httpx.Response(200, json={"code": 0, "data": {"repo_id": "r1", "wiki_id": "w1"}})
+        if "/api/v1/wiki/" in url:
+            return httpx.Response(200, json=_wiki_json(1))
+        return httpx.Response(404)
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok")
+    talk = run_async(client.start_talk("o/r"))
+    assert run_async(talk.ask("q1?")) == "first"
+    assert run_async(talk.ask("q2?")) == "first"
+    assert parents == ["", "m1"]
 
 
 def test_is_cert_error_detects_ssl_verification():

@@ -137,6 +137,49 @@ def _repl_prompt() -> str:
     return typer.style(">> ", fg=typer.colors.CYAN, bold=True)
 
 
+def _stream_chunk(text: str) -> None:
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
+def _streamers(show_reasoning: bool):
+    """Return ``(on_reasoning, on_chunk)`` callbacks for ``--stream``.
+
+    Without ``--show-reasoning`` this streams only the answer (reasoning is
+    dropped). With it, the reasoning trace streams first under a ``reasoning:``
+    label, then the answer under an ``answer:`` label.
+    """
+    if not show_reasoning:
+        return None, _stream_chunk
+    state = {"reasoning": False, "answer": False}
+
+    def on_reasoning(text: str) -> None:
+        if not state["reasoning"]:
+            sys.stdout.write("\nreasoning:\n")
+            state["reasoning"] = True
+        sys.stdout.write(text)
+        sys.stdout.flush()
+
+    def on_chunk(text: str) -> None:
+        if not state["answer"]:
+            if state["reasoning"]:
+                sys.stdout.write("\n\nanswer:\n")
+            state["answer"] = True
+        sys.stdout.write(text)
+        sys.stdout.flush()
+
+    return on_reasoning, on_chunk
+
+
+def _print_reasoning(reasoning: str) -> None:
+    """Print a captured reasoning trace (dimmed) above the answer."""
+    if not reasoning.strip():
+        return
+    typer.secho("reasoning:", fg=typer.colors.YELLOW, dim=True)
+    typer.secho(reasoning.strip(), fg=typer.colors.YELLOW, dim=True)
+    typer.echo()
+
+
 def _print_error(exc: Exception) -> None:
     if isinstance(exc, ZreadError):
         message = str(exc)
@@ -155,10 +198,16 @@ def _append_save(path: Optional[str], repo: str, question: str, answer: str) -> 
 
 
 async def _repl(
-    resolved: str, rich: bool, save_path: Optional[str], model: Optional[str], lang: Optional[str]
+    resolved: str, rich: bool, save_path: Optional[str], model: Optional[str], lang: Optional[str],
+    stream: bool = False, show_reasoning: bool = False,
 ) -> None:
     prompt = _repl_prompt()
     client = _make_client(lang, model)
+    try:
+        talk = await client.start_talk(resolved)
+    except Exception as exc:
+        _print_error(exc)
+        return
     while True:
         try:
             line = input(prompt)
@@ -170,19 +219,37 @@ async def _repl(
             continue
         if q in ("/exit", "/quit", "/q"):
             break
+        if q in ("/new", "/reset"):
+            try:
+                talk = await client.start_talk(resolved)
+                typer.echo("Started a new thread.")
+            except Exception as exc:
+                _print_error(exc)
+            continue
         try:
-            with status("Thinking..."):
-                answer = await client.ask(resolved, q)
+            if stream:
+                on_reasoning, on_chunk = _streamers(show_reasoning)
+                answer = await talk.ask(q, on_chunk=on_chunk, on_reasoning=on_reasoning)
+            else:
+                reasoning_parts: list[str] = []
+                with status("Thinking..."):
+                    answer = await talk.ask(
+                        q, on_reasoning=reasoning_parts.append if show_reasoning else None
+                    )
         except Exception as exc:
             _print_error(exc)
             continue
         _append_save(save_path, resolved, q, answer)
-        typer.echo()
-        if rich:
-            render_rich(answer.strip())
+        if stream:
+            typer.echo()
         else:
-            typer.echo(answer.strip())
-        typer.echo()
+            _print_reasoning("".join(reasoning_parts))
+            typer.echo()
+            if rich:
+                render_rich(answer.strip())
+            else:
+                typer.echo(answer.strip())
+            typer.echo()
 
 
 def _render_structure(pages: list[Page]) -> str:
@@ -416,24 +483,65 @@ def ask(
     rich: bool = typer.Option(False, "--rich", help="Render Markdown with rich"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
     save: Optional[str] = typer.Option(None, "--save", help="Save the answer to a Markdown file."),
+    stream: bool = typer.Option(False, "--stream", help="Stream answer chunks as they arrive"),
+    show_reasoning: bool = typer.Option(
+        False, "--show-reasoning", help="Also show the model's reasoning trace",
+    ),
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo, json)
     if question is not None:
         if not question.strip():
             _fail("Question must not be empty.", "invalid_input", json)
+        if stream and json:
+            typer.secho(
+                "Warning: --stream has no effect with --json.",
+                fg=typer.colors.YELLOW, err=True,
+            )
+        if stream and rich:
+            typer.secho(
+                "Warning: --rich has no effect with --stream; the answer streams as plain text.",
+                fg=typer.colors.YELLOW, err=True,
+            )
+        if show_reasoning and json:
+            typer.secho(
+                "Warning: --show-reasoning has no effect with --json.",
+                fg=typer.colors.YELLOW, err=True,
+            )
         if (mock := _mock_text()) is not None:
             answer = Answer(body=mock)
-        else:
-            client = _make_client(lang, model)
-            try:
+            if json:
+                typer.echo(format_json(resolved, "ask", question=question, answer=answer.body))
+            else:
+                _emit(resolved, "ask", format_answer(answer), rich, False)
+            _append_save(save, resolved, question, answer.body)
+            return
+        client = _make_client(lang, model)
+        streamed = False
+        reasoning_parts: list[str] = []
+        try:
+            if stream and not json:
+                on_reasoning, on_chunk = _streamers(show_reasoning)
+                answer = Answer(body=run_async(
+                    client.ask(resolved, question, on_chunk=on_chunk, on_reasoning=on_reasoning)
+                ))
+                streamed = True
+            else:
                 with status("Thinking..."):
-                    answer = Answer(body=run_async(client.ask(resolved, question)))
-            except Exception as exc:
-                _handle_exception(exc, json)
+                    answer = Answer(body=run_async(
+                        client.ask(
+                            resolved, question,
+                            on_reasoning=reasoning_parts.append if show_reasoning else None,
+                        )
+                    ))
+        except Exception as exc:
+            _handle_exception(exc, json)
         if json:
             typer.echo(format_json(resolved, "ask", question=question, answer=answer.body))
+        elif streamed:
+            typer.echo()
         else:
+            _print_reasoning("".join(reasoning_parts))
             _emit(resolved, "ask", format_answer(answer), rich, False)
         _append_save(save, resolved, question, answer.body)
         return
@@ -441,10 +549,10 @@ def ask(
         typer.secho("Warning: --json has no effect in interactive mode.", fg=typer.colors.YELLOW, err=True)
     typer.echo(format_header("Zread", resolved, "ask"))
     typer.echo()
-    typer.echo("Ask a question, or /exit to quit.")
+    typer.echo("Ask a question, or /exit to quit.  (/new starts a new thread)")
     typer.echo()
     try:
-        run_async(_repl(resolved, rich, save, model, lang))
+        run_async(_repl(resolved, rich, save, model, lang, stream, show_reasoning))
     except Exception as exc:
         _handle_exception(exc, False)
 

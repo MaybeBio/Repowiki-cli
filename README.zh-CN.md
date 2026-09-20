@@ -621,7 +621,7 @@ repowiki-cli codewiki cp REPO [OUTPUT_DIR]
 ```bash
 repowiki-cli zread structure REPO [--lang zh|en] [--json]
 repowiki-cli zread contents REPO [SLUG] [--file PATH] [--start N] [--end M] [--lang zh|en] [--rich] [--json]
-repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH]
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH] [--stream] [--show-reasoning]
 repowiki-cli zread find QUERY [--limit N] [--lang zh|en] [--json]
 repowiki-cli zread stat REPO [--lang zh|en] [--human] [--stale] [--json]
 repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
@@ -668,11 +668,13 @@ repowiki-cli zread contents https://github.com/o/r/blob/main/src/a.py#L10-L20
 ### `zread ask`
 
 ```bash
-repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save PATH]
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save PATH] [--stream] [--show-reasoning]
 ```
 
 带 `QUESTION` 则单次回答后退出；不带则进入交互式 REPL——每行一个问题，输入
-`/exit`（或 `/quit`/`/q`）退出。
+`/exit`（或 `/quit`/`/q`）退出。REPL 中每轮都是**多轮续接**的：复用同一个
+`talk_id`，并把上一轮答案的 message id 作为 `parent_message_id` 发送，因此追问
+能携带上下文记忆。输入 `/new`（或 `/reset`）可开启一个新线程。
 
 与其他命令不同，`ask` 需要鉴权 token（一个 JWT）。登录 zread.ai 后，在浏览器
 DevTools 控制台执行
@@ -682,9 +684,13 @@ DevTools 控制台执行
 - `--model MODEL` — 模型（默认 `glm-5.1`，或环境变量 `ZREAD_MODEL`）。对应网页端的
   `CGX_CHAT_MODEL`（如 `glm-5.1`、`claude-sonnet-4.6`）。
 - `--lang zh|en` — 语言。
-- `--rich` — 用 `rich` 渲染答案的 Markdown。
-- `--json` — 输出 JSON 信封；交互模式下忽略。
+- `--rich` — 用 `rich` 渲染答案的 Markdown。与 `--stream` 一起使用时无效（流式输出为纯文本）。
+- `--json` — 输出 JSON 信封；交互模式下忽略。与 `--stream` 一起使用时无效。
 - `--save PATH` — 把答案保存为 Markdown 文件（见「保存」）。
+- `--stream` — 通过 SSE 把 `answer` 事件的分片逐字写到 stdout，流式输出纯文本答案。
+- `--show-reasoning` — 同时展示模型的思考过程（SSE 的 `reasoning_content` 字段，
+  在回答之前流式下发）。`--stream` 模式下会先输出 `reasoning:` 块再输出
+  `answer:` 块；否则以暗色打印在答案上方。与 `--json` 一起使用时无效。
 
 ### `zread find`
 

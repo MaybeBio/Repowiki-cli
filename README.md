@@ -666,7 +666,7 @@ read commands need **no auth**. The commands `ask` and `submit` require a token
 ```bash
 repowiki-cli zread structure REPO [--lang zh|en] [--json]
 repowiki-cli zread contents REPO [SLUG] [--file PATH] [--start N] [--end M] [--lang zh|en] [--rich] [--json]
-repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH]
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH] [--stream] [--show-reasoning]
 repowiki-cli zread find QUERY [--limit N] [--lang zh|en] [--json]
 repowiki-cli zread stat REPO [--lang zh|en] [--human] [--stale] [--json]
 repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
@@ -717,12 +717,15 @@ repowiki-cli zread contents https://github.com/o/r/blob/main/src/a.py#L10-L20
 ### `zread ask`
 
 ```bash
-repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save PATH]
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save PATH] [--stream] [--show-reasoning]
 ```
 
 With `QUESTION`, `ask` answers once and exits. Without it, `ask` starts an
 interactive REPL — type one question per line and `/exit` (or `/quit`/`/q`) to
-quit.
+quit. In the REPL each turn is **threaded**: the same `talk_id` is reused and the
+previous answer's message id is sent as `parent_message_id`, so follow-up
+questions carry conversational memory. Type `/new` (or `/reset`) to start a fresh
+thread.
 
 Unlike the other commands, `ask` requires an auth token (a JWT). Log in to
 zread.ai, open the browser DevTools console, and run
@@ -733,9 +736,17 @@ the token. Set it as the `ZREAD_TOKEN` environment variable.
   variable). This maps to the web UI's `CGX_CHAT_MODEL` (e.g. `glm-5.1`,
   `claude-sonnet-4.6`).
 - `--lang zh|en` — language.
-- `--rich` — render the answer's Markdown with `rich`.
-- `--json` — emit a JSON envelope. Ignored in interactive mode.
+- `--rich` — render the answer's Markdown with `rich`. Has no effect with
+  `--stream` (the answer streams as plain text).
+- `--json` — emit a JSON envelope. Ignored in interactive mode. Has no effect
+  with `--stream`.
 - `--save PATH` — save the answer to a Markdown file (see *Saving*).
+- `--stream` — stream the answer's `answer` SSE chunks to stdout as they arrive
+  (plain text), instead of buffering until the full answer is ready.
+- `--show-reasoning` — also show the model's reasoning trace (the
+  `reasoning_content` SSE field, streamed before the answer). In `--stream` mode
+  it prints a `reasoning:` block before the `answer:` block; otherwise it prints
+  the trace dimmed above the answer. Has no effect with `--json`.
 
 ### `zread find`
 

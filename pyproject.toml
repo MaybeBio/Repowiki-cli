@@ -1,7 +1,7 @@
 [project]
-name = "repowiki-cli"
+name = "pyrepowiki-cli"
 version = "0.1.0"
-description = "CLI tool for querying DeepWiki documentation"
+description = "CLI tool for querying DeepWiki/Google code wiki/Zread wiki documentation"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
