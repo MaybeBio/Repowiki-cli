@@ -245,6 +245,28 @@ class ZreadClient:
         )
         return _unwrap(resp) or {}
 
+    async def search_wiki(self, repo: str, query: str) -> list:
+        info = await self.repo_info(repo)
+        wiki_id = str(info.get("wiki_id") or "")
+        if not wiki_id:
+            raise ZreadNotFoundError(f"no wiki_id for {repo}")
+        resp = await self._request(
+            "GET", f"{BASE}/api/v1/wiki/{wiki_id}/search", timeout=30.0,
+            params={"q": query}, headers=self._headers(),
+        )
+        return _unwrap(resp) or []
+
+    async def refresh(self, repo: str) -> dict:
+        info = await self.repo_info(repo)
+        repo_id = str(info.get("repo_id") or "")
+        if not repo_id:
+            raise ZreadNotFoundError(f"no repo_id for {repo}")
+        await self._request(
+            "POST", f"{BASE}/api/v1/repo/{repo_id}/refresh", timeout=30.0,
+            headers=self._headers(),
+        )
+        return {"repo_id": repo_id, "ok": True}
+
     async def read_file(
         self, repo_id: str, path: str,
         start: int | None = None, end: int | None = None,

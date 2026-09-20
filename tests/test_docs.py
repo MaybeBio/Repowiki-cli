@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 _COMMANDS = (
     "structure", "contents", "ask", "list", "status", "warm", "get",
-    "find", "stat", "top", "rand", "cp", "submit",
+    "find", "stat", "top", "rand", "cp", "submit", "search", "refresh",
 )
 _BARE_INVOCATION = re.compile(r"repowiki-cli\s+(?:" + "|".join(_COMMANDS) + r")\b")
 

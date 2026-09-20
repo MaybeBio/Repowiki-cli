@@ -583,10 +583,12 @@ repowiki-cli zread contents REPO [SLUG] [--file PATH] [--start N] [--end M] [--l
 repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH]
 repowiki-cli zread find QUERY [--limit N] [--lang zh|en] [--json]
 repowiki-cli zread stat REPO [--lang zh|en] [--json]
+repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
 repowiki-cli zread top [WEEKS] [--lang zh|en] [--json]
 repowiki-cli zread rand [TOPIC] [--lang zh|en] [--json]
 repowiki-cli zread cp REPO [OUTPUT_DIR] [--concurrency N] [--lang zh|en]
 repowiki-cli zread submit REPO [--json]
+repowiki-cli zread refresh REPO [--json]
 ```
 
 Quick start:
@@ -657,6 +659,18 @@ Prints repository info and index status on zread.ai.
 - `--lang zh|en` — language.
 - `--json` — emit a JSON envelope.
 
+### `zread search`
+
+Searches within a repository's wiki documentation for matching text, returning
+the page title and highlighted matches.
+
+```bash
+repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
+```
+
+- `--lang zh|en` — language.
+- `--json` — emit a JSON envelope.
+
 ### `zread top`
 
 Prints the zread.ai trending list. `WEEKS` limits the number of week-groups shown.
@@ -686,6 +700,16 @@ to zread.ai, run
 `JSON.parse(localStorage.getItem("CGX_AUTH_STORAGE")).state.token` in the DevTools
 console, and set the result as `ZREAD_TOKEN`. Without it, `submit` prints a
 warning and skips.
+
+- `--json` — emit a JSON envelope.
+
+### `zread refresh`
+
+Requests a re-index (refresh) of a repository's wiki. No auth required.
+
+```bash
+repowiki-cli zread refresh REPO [--json]
+```
 
 - `--json` — emit a JSON envelope.
 

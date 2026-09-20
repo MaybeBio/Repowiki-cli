@@ -159,3 +159,60 @@ def test_submit_with_token(monkeypatch):
     result = runner.invoke(zread_app, ["submit", "owner/example"])
     assert result.exit_code == 0
     assert "Submitted owner/example" in result.output
+
+
+def test_search_command(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def search_wiki(self, repo, query):
+            return [{"title": "Overview", "slug": "1-overview", "matches": [{"highlight": "<em>fiber</em> here"}]}]
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["search", "owner/example", "fiber"])
+    assert result.exit_code == 0
+    assert "Overview" in result.output
+    assert "fiber" in result.output
+
+
+def test_search_json(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def search_wiki(self, repo, query):
+            return [{"title": "T", "slug": "s", "matches": []}]
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["search", "owner/example", "q", "--json"])
+    assert result.exit_code == 0
+    assert '"command": "search"' in result.output
+
+
+def test_refresh_command(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def refresh(self, repo):
+            return {"repo_id": "r1", "ok": True}
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["refresh", "owner/example"])
+    assert result.exit_code == 0
+    assert "Refreshed owner/example" in result.output
+
+
+def test_refresh_json(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def refresh(self, repo):
+            return {"repo_id": "r1", "ok": True}
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["refresh", "owner/example", "--json"])
+    assert result.exit_code == 0
+    assert '"command": "refresh"' in result.output

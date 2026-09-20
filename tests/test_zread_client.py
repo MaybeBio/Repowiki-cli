@@ -147,6 +147,61 @@ def test_submit_hits_endpoint_with_bearer():
     assert seen["auth"] == "Bearer tok"
 
 
+def test_search_wiki_hits_endpoint():
+    seen = {}
+
+    def handler(request):
+        url = str(request.url)
+        if "repo/github" in url:
+            return httpx.Response(200, json={"code": 0, "data": {"repo_id": "r1", "wiki_id": "w1"}})
+        seen["url"] = url
+        return httpx.Response(
+            200, json={"code": 0, "data": [{"title": "T", "slug": "s", "matches": []}]}
+        )
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    results = run_async(client.search_wiki("o/r", "needle"))
+    assert results[0]["title"] == "T"
+    assert "api/v1/wiki/w1/search" in seen["url"]
+    assert "q=needle" in seen["url"]
+
+
+def test_search_wiki_requires_wiki_id():
+    def handler(request):
+        return httpx.Response(200, json={"code": 0, "data": {}})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(ZreadNotFoundError, match="wiki_id"):
+        run_async(client.search_wiki("o/r", "needle"))
+
+
+def test_refresh_hits_endpoint():
+    seen = {}
+
+    def handler(request):
+        url = str(request.url)
+        if "repo/github" in url:
+            return httpx.Response(200, json={"code": 0, "data": {"repo_id": "r1", "wiki_id": "w1"}})
+        seen["url"] = url
+        seen["method"] = request.method
+        return httpx.Response(200, json={"code": 0, "data": {}})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    data = run_async(client.refresh("o/r"))
+    assert data == {"repo_id": "r1", "ok": True}
+    assert "api/v1/repo/r1/refresh" in seen["url"]
+    assert seen["method"] == "POST"
+
+
+def test_refresh_requires_repo_id():
+    def handler(request):
+        return httpx.Response(200, json={"code": 0, "data": {}})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(ZreadNotFoundError, match="repo_id"):
+        run_async(client.refresh("o/r"))
+
+
 def test_outline_parses_flight():
     def handler(request):
         return httpx.Response(200, text=_flight_html(2))

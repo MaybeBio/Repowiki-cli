@@ -544,10 +544,12 @@ repowiki-cli zread contents REPO [SLUG] [--file PATH] [--start N] [--end M] [--l
 repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH]
 repowiki-cli zread find QUERY [--limit N] [--lang zh|en] [--json]
 repowiki-cli zread stat REPO [--lang zh|en] [--json]
+repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
 repowiki-cli zread top [WEEKS] [--lang zh|en] [--json]
 repowiki-cli zread rand [TOPIC] [--lang zh|en] [--json]
 repowiki-cli zread cp REPO [OUTPUT_DIR] [--concurrency N] [--lang zh|en]
 repowiki-cli zread submit REPO [--json]
+repowiki-cli zread refresh REPO [--json]
 ```
 
 快速上手：
@@ -613,6 +615,17 @@ DevTools 控制台执行
 - `--lang zh|en` — 语言。
 - `--json` — 输出 JSON 信封。
 
+### `zread search`
+
+在仓库的 wiki 文档内搜索文本，返回匹配的页面标题与高亮片段。
+
+```bash
+repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
+```
+
+- `--lang zh|en` — 语言。
+- `--json` — 输出 JSON 信封。
+
 ### `zread top`
 
 打印 zread.ai 趋势榜。`WEEKS` 限制显示的周分组数量。
@@ -641,6 +654,16 @@ DevTools 控制台执行
 控制台执行
 `JSON.parse(localStorage.getItem("CGX_AUTH_STORAGE")).state.token`，把结果设为
 `ZREAD_TOKEN` 环境变量。未设置时，`submit` 会打印警告并跳过。
+
+- `--json` — 输出 JSON 信封。
+
+### `zread refresh`
+
+请求对仓库的 wiki 重新索引（刷新）。无需鉴权。
+
+```bash
+repowiki-cli zread refresh REPO [--json]
+```
 
 - `--json` — 输出 JSON 信封。
 

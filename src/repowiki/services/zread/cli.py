@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sys
 from pathlib import Path
 from typing import NoReturn, Optional
@@ -212,6 +213,30 @@ def _format_stat(data: dict) -> str:
     return "\n".join(f"- {k}: {v}" for k, v in data.items())
 
 
+def _format_search(results: list) -> str:
+    if not results:
+        return "No results."
+    lines = []
+    for r in results:
+        title = str(r.get("title") or "").strip()
+        slug = str(r.get("slug") or "").strip()
+        heading = title or slug
+        if title and slug and slug != title:
+            heading = f"{title}  ({slug})"
+        lines.append(f"## {heading}")
+        for m in r.get("matches", []):
+            if isinstance(m, dict):
+                text = m.get("highlight") or m.get("content") or ""
+            else:
+                text = m
+            text = re.sub(r"<[^>]+>", "", str(text))
+            text = re.sub(r"\s+", " ", text).strip()
+            if text:
+                lines.append(f"- {text}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
 async def _export(client: ZreadClient, repo: str, out_dir: str, concurrency: int) -> int:
     _, pages = await client.outline(repo)
     sem = asyncio.Semaphore(concurrency)
@@ -370,6 +395,27 @@ def find(
 
 
 @zread_app.command()
+def search(
+    repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
+    query: str = typer.Argument(..., help="Text to search for inside the wiki"),
+    lang: Optional[str] = typer.Option(None, "--lang", help="Language (zh|en)"),
+    json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Search within a repository's wiki documentation."""
+    resolved = _resolve_repo(repo, json)
+    client = _make_client(lang)
+    try:
+        with status("Searching..."):
+            results = run_async(client.search_wiki(resolved, query))
+    except Exception as exc:
+        _handle_exception(exc, json)
+    if json:
+        typer.echo(format_json(resolved, "search", query=query, results=results))
+    else:
+        typer.echo(format_result("Zread", resolved, "search", _format_search(results)))
+
+
+@zread_app.command()
 def stat(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     lang: Optional[str] = typer.Option(None, "--lang", help="Language (zh|en)"),
@@ -476,3 +522,22 @@ def submit(
         typer.echo(format_json(resolved, "submit", data=data))
     else:
         typer.echo(f"Submitted {resolved} for indexing.")
+
+
+@zread_app.command()
+def refresh(
+    repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
+    json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Request a re-index (refresh) of a repository's wiki."""
+    resolved = _resolve_repo(repo, json)
+    client = _make_client(None)
+    try:
+        with status("Refreshing..."):
+            data = run_async(client.refresh(resolved))
+    except Exception as exc:
+        _handle_exception(exc, json)
+    if json:
+        typer.echo(format_json(resolved, "refresh", data=data))
+    else:
+        typer.echo(f"Refreshed {resolved}.")
