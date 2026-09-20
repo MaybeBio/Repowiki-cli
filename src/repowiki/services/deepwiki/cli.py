@@ -7,6 +7,7 @@ import os
 import random
 import sys
 from dataclasses import asdict
+from datetime import datetime
 from typing import NoReturn, Optional
 from uuid import uuid4
 
@@ -22,6 +23,7 @@ from repowiki.services.deepwiki.client import (
 from repowiki.shared.async_ import run_async
 from repowiki.services.deepwiki.codemap import codemap_to_mermaid
 from repowiki.services.deepwiki.devin import DevinClient
+from repowiki.shared.export import export_pages
 from repowiki.shared.model import Answer
 from repowiki.shared.output import (
     filter_page,
@@ -36,6 +38,7 @@ from repowiki.shared.output import (
     format_status,
     format_warm,
     render_markdown,
+    split_pages,
     status,
 )
 from repowiki.shared.repo import normalize_repo
@@ -78,7 +81,7 @@ class _AskCommand(TyperCommand):
 
 def _error_message(exc: Exception) -> str:
     if isinstance(exc, ConnectionError):
-        return "Could not connect to DeepWiki server. Check your connection and try again."
+        return str(exc) or "Could not connect to DeepWiki server. Check your connection and try again."
     if isinstance(exc, ToolError):
         return str(exc)
     if isinstance(exc, DeepWikiError):
@@ -730,6 +733,117 @@ def get(
         render_markdown(rendered)
     else:
         typer.echo(rendered)
+
+
+def _short_sha(index_id: str) -> str:
+    """Extract the short commit sha from an index id (its last segment).
+
+    The last segment may carry a branch suffix (``59aff3e1::main``); keep only
+    the sha part before any ``::``.
+    """
+    last = index_id.rsplit("/", 1)[-1] if index_id else ""
+    return last.split("::", 1)[0]
+
+
+def _iso_to_local(value: str) -> str:
+    """Render an ISO-8601 timestamp as the local timezone's human form."""
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    except (ValueError, TypeError):
+        return value
+
+
+def _format_stat(entry: dict, human: bool) -> str:
+    lines: list[str] = []
+    if entry.get("repo_name"):
+        lines.append(f"- repo: {entry['repo_name']}")
+    sha = _short_sha(entry.get("id") or "")
+    if sha:
+        lines.append(f"- commit: {sha}")
+    last_modified = entry.get("last_modified")
+    if last_modified:
+        if human:
+            lines.append(f"- last_indexed: {last_modified} ({_iso_to_local(last_modified)})")
+        else:
+            lines.append(f"- last_indexed: {last_modified}")
+    for key in ("language", "stargazers_count", "topics", "description"):
+        if entry.get(key) is not None:
+            lines.append(f"- {key}: {entry[key]}")
+    return "\n".join(lines) or "No data."
+
+
+def _format_stale(info: dict) -> str:
+    wiki_sha = info.get("wiki_sha") or ""
+    github_sha = info.get("github_sha") or ""
+    when = info.get("github_when") or ""
+    if not github_sha:
+        return "Could not fetch GitHub HEAD."
+    if not wiki_sha:
+        return "No commit sha in the index entry."
+    if github_sha.startswith(wiki_sha):
+        return f"最新 (up-to-date): {wiki_sha}"
+    suffix = f" ({when})" if when else ""
+    return f"过期 (stale): wiki {wiki_sha[:7]} != github {github_sha[:7]}{suffix}"
+
+
+@deepwiki_app.command()
+def stat(
+    repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
+    human: bool = typer.Option(False, "--human", help="Show timestamps as human-readable local times"),
+    stale: bool = typer.Option(False, "--stale", help="Compare the indexed commit against GitHub HEAD"),
+    json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Show a repository's DeepWiki index metadata (last indexed time + commit)."""
+    resolved = _resolve_repo(repo, json)
+    client = DevinClient()
+    entry: dict | None = None
+    stale_info: dict | None = None
+    try:
+        with status("Fetching index info..."):
+            entry = run_async(client.repo_index(resolved))
+        if entry is not None and stale:
+            wiki_sha = _short_sha(entry.get("id") or "")
+            with status("Checking GitHub HEAD..."):
+                head = run_async(client.github_head(resolved))
+            stale_info = {
+                "wiki_sha": wiki_sha,
+                "github_sha": head.get("sha") or "",
+                "github_when": head.get("when") or "",
+            }
+    except Exception as exc:
+        _handle_exception(exc, json)
+    if entry is None:
+        _fail(f"No index entry found for {resolved}.", "not_indexed", json)
+    if json:
+        fields: dict[str, object] = {"repo": resolved, "data": entry}
+        if stale_info is not None:
+            fields["stale"] = stale_info
+        typer.echo(format_command_json("stat", **fields))
+        return
+    text = _format_stat(entry, human)
+    if stale_info is not None:
+        text += "\n\n" + _format_stale(stale_info)
+    typer.echo(format_result("DeepWiki", resolved, "stat", text))
+
+
+@deepwiki_app.command()
+def cp(
+    repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
+    output_dir: Optional[str] = typer.Argument(None, help="Output directory"),
+) -> None:
+    """Export the whole wiki as Markdown files plus llms.txt."""
+    resolved = _resolve_repo(repo, False)
+    client = DeepWikiClient()
+    out = output_dir or resolved.replace("/", "_")
+    try:
+        with status("Exporting wiki..."):
+            text = run_async(client.read_wiki_contents(resolved))
+        pages = split_pages(text)
+        count = export_pages(out, resolved, pages, text)
+    except Exception as exc:
+        _handle_exception(exc, False)
+    typer.echo(f"Exported {count} pages to {out}")
 
 
 def register(app: typer.Typer) -> None:

@@ -13,8 +13,9 @@ from repowiki.services.codewiki.client import (
     CodeWikiConnectionError,
     CodeWikiError,
 )
-from repowiki.services.codewiki.wiki import render_markdown, render_page, render_structure
+from repowiki.services.codewiki.wiki import render_markdown, render_page, render_section, render_structure
 from repowiki.shared.async_ import run_async
+from repowiki.shared.export import export_pages
 from repowiki.shared.model import Answer
 from repowiki.shared.output import (
     filter_page,
@@ -241,3 +242,74 @@ def ask(
         run_async(_repl(resolved, rich, save))
     except Exception as exc:
         _handle_exception(exc, False)
+
+
+def _format_stale(info: dict) -> str:
+    wiki_sha = info.get("wiki_sha") or ""
+    github_sha = info.get("github_sha") or ""
+    when = info.get("github_when") or ""
+    if not github_sha:
+        return "Could not fetch GitHub HEAD."
+    if not wiki_sha:
+        return "No commit sha in the wiki."
+    if github_sha.startswith(wiki_sha):
+        return f"最新 (up-to-date): {wiki_sha}"
+    suffix = f" ({when})" if when else ""
+    return f"过期 (stale): wiki {wiki_sha[:7]} != github {github_sha[:7]}{suffix}"
+
+
+@codewiki_app.command()
+def stat(
+    repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
+    stale: bool = typer.Option(False, "--stale", help="Compare the wiki commit against GitHub HEAD"),
+    json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Show the commit the CodeWiki documentation was generated from."""
+    resolved = _resolve_repo(repo, json)
+    client = CodeWikiClient()
+    wiki_sha: str = ""
+    stale_info: dict | None = None
+    try:
+        with status("Fetching wiki..."):
+            wiki = run_async(client.read_wiki(resolved))
+        wiki_sha = wiki.commit_sha
+        if stale:
+            with status("Checking GitHub HEAD..."):
+                head = run_async(client.github_head(resolved))
+            stale_info = {
+                "wiki_sha": wiki_sha,
+                "github_sha": head.get("sha") or "",
+                "github_when": head.get("when") or "",
+            }
+    except Exception as exc:
+        _handle_exception(exc, json)
+    if json:
+        fields: dict[str, object] = {"commit": wiki_sha}
+        if stale_info is not None:
+            fields["stale"] = stale_info
+        typer.echo(format_json(resolved, "stat", **fields))
+        return
+    text = f"- commit: {wiki_sha}" if wiki_sha else "No data."
+    if stale_info is not None:
+        text += "\n\n" + _format_stale(stale_info)
+    typer.echo(format_result("CodeWiki", resolved, "stat", text))
+
+
+@codewiki_app.command()
+def cp(
+    repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
+    output_dir: Optional[str] = typer.Argument(None, help="Output directory"),
+) -> None:
+    """Export the whole wiki as Markdown files plus llms.txt."""
+    resolved = _resolve_repo(repo, False)
+    client = CodeWikiClient()
+    out = output_dir or resolved.replace("/", "_")
+    try:
+        with status("Exporting wiki..."):
+            wiki = run_async(client.read_wiki(resolved))
+        pages = [(s.title, render_section(s)) for s in wiki.sections]
+        full = render_markdown(wiki)
+        count = export_pages(out, resolved, pages, full)
+    except Exception as exc:
+        _handle_exception(exc, False)
+    typer.echo(f"Exported {count} pages to {out}")

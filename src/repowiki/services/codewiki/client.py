@@ -140,6 +140,38 @@ class CodeWikiClient:
                 return payload[0]
             raise CodeWikiError("EgIxfe response did not contain an answer string")
 
+    async def github_head(self, repo: str) -> dict:
+        """Return the GitHub HEAD sha and commit date for ``repo``.
+
+        Used to compare the wiki's ``commit_sha`` against the live branch to
+        detect a stale wiki.
+        """
+        owner, name = repo.split("/", 1)
+        try:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                resp = await client.get(
+                    f"https://api.github.com/repos/{owner}/{name}/commits/HEAD"
+                )
+                resp.raise_for_status()
+                commit = resp.json()
+        except httpx.TransportError as exc:
+            message = f"Failed to connect to GitHub: {exc}"
+            if _is_cert_error(exc):
+                message += (
+                    " (TLS certificate verification failed; set SSL_CERT_FILE to "
+                    "your CA bundle to trust a proxy/mirror)"
+                )
+            raise CodeWikiConnectionError(message) from exc
+        except httpx.HTTPStatusError as exc:
+            raise CodeWikiError(
+                f"GitHub API returned HTTP {exc.response.status_code}"
+            ) from exc
+        if not isinstance(commit, dict):
+            raise CodeWikiError("unexpected GitHub response")
+        committer = commit.get("commit", {}).get("committer") or {}
+        when = committer.get("date") if isinstance(committer, dict) else None
+        return {"sha": commit.get("sha") or "", "when": when}
+
     async def _call(
         self,
         http: httpx.AsyncClient,

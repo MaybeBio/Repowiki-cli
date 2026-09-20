@@ -18,14 +18,14 @@ per service:
 |---------|-----------|-----------|------|
 | **DeepWiki** | `deepwiki` | MCP (Streamable HTTP) + reverse REST/WebSocket | none |
 | **Google Code Wiki** | `codewiki` | Google `batchexecute` RPC | none |
-| **Zread** | `zread` | Next.js RSC + JSON REST + SSE | `ask` / `submit` need a token |
+| **Zread** | `zread` | JSON REST + SSE | `ask` / `submit` need a token |
 
 DeepWiki is served by two interchangeable backends:
 
 | Backend | Transport | Commands | Richness |
 |---------|-----------|----------|----------|
-| **MCP** (official) | Streamable HTTP | `structure`, `contents`, `ask` | body only |
-| **Reverse** (`api.devin.ai`) | REST + WebSocket | `ask` (with flags) + `list` / `status` / `warm` / `get` | body, summary, references, sources, stats |
+| **MCP** (official) | Streamable HTTP | `structure`, `contents`, `ask`, `cp` | body only |
+| **Reverse** (`api.devin.ai`) | REST + WebSocket | `ask` (with flags) + `list` / `status` / `warm` / `get` / `stat` | body, summary, references, sources, stats |
 
 The MCP backend is the official, documented DeepWiki server and is free for
 public repos with no auth. The reverse backend is the underlying engine
@@ -68,9 +68,13 @@ repowiki-cli zread contents vercel/next.js              # overview page
 | `status REPO` | Report a repo's indexing status | DeepWiki (reverse) |
 | `warm REPO` | Pre-warm a repo's docs cache | DeepWiki (reverse) |
 | `get QUERY_ID` | Replay a past answer by query id | DeepWiki (reverse) |
+| `stat REPO` | Report a repo's index metadata | DeepWiki (reverse) |
+| `cp REPO [OUTPUT_DIR]` | Export the whole wiki as Markdown + `llms.txt` | DeepWiki (MCP) |
 | `structure REPO` | Print the documentation table of contents | CodeWiki |
 | `contents REPO` | Print the full documentation | CodeWiki |
 | `ask REPO [QUESTION]` | Answer a question (single-shot or interactive) | CodeWiki |
+| `stat REPO` | Show the commit the wiki was generated from | CodeWiki |
+| `cp REPO [OUTPUT_DIR]` | Export the whole wiki as Markdown + `llms.txt` | CodeWiki |
 | `structure REPO` | Print the documentation table of contents | Zread |
 | `contents REPO [SLUG]` | Print a page of documentation (default: overview) | Zread |
 | `ask REPO [QUESTION]` | Answer a question (single-shot or interactive, needs token) | Zread |
@@ -110,8 +114,8 @@ Main commands emit an envelope with `repo` and `command`:
 
 DeepWiki `ask` additionally includes `summary`, `references`, `sources`, `stats`,
 and `query_id` when the reverse backend provides them. Management commands
-(`list` / `status` / `warm` / `get`) omit `repo` and use `command` + fields
-only. Errors go to stderr as `{"error": ..., "kind": ...}`.
+(`list` / `status` / `warm` / `get` / `stat`) omit `repo` and use `command` +
+fields only. Errors go to stderr as `{"error": ..., "kind": ...}`.
 
 ## Saving (`--save`)
 
@@ -243,6 +247,39 @@ repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
 ```
 
 Replays a past answer by query id (reverse `get_query`).
+
+### `deepwiki stat`
+
+```bash
+repowiki-cli deepwiki stat REPO [--human] [--stale] [--json]
+```
+
+Shows a repo's index metadata from the reverse `list_public_indexes` — the
+short commit sha (last segment of the index `id`) and `last_modified` (the
+"Last indexed" timestamp shown on deepwiki.com).
+
+- `--human` — render `last_modified` as a local, space-separated time.
+- `--stale` — compare the indexed short sha against GitHub HEAD (via
+  `api.github.com/.../commits/HEAD`) and print `最新`/`过期`. Note: a refresh
+  (re-index) has no public endpoint — `index_public_repo` is reCAPTCHA-gated —
+  so `stat` can only *detect* staleness, not fix it.
+- `--json` — emit a JSON envelope (with `stale` when `--stale` is set).
+
+### `deepwiki cp`
+
+```bash
+repowiki-cli deepwiki cp REPO [OUTPUT_DIR]
+```
+
+Exports the full wiki (MCP `read_wiki_contents`) as one Markdown file per
+`# Page:` section, plus `llms.txt` (index) and `llms-full.txt` (concatenated).
+`OUTPUT_DIR` defaults to `owner_repo`.
+
+**Implementation:** the raw Markdown is split on `# Page:` delimiters by
+`shared/output.py::split_pages` (a payload with no delimiters becomes a single
+`Overview` page). Files are written by the shared `shared/export.py::export_pages`
+helper, which names each page `NN-slug.md` and also emits `llms.txt` (index of
+`- [title](NN-slug.md)` links) and `llms-full.txt` (the whole concatenated text).
 
 ### DeepWiki design
 
@@ -471,6 +508,8 @@ repowiki-cli deepwiki warm facebook/react
 repowiki-cli deepwiki get <query-id>
 repowiki-cli deepwiki get <query-id> --sources
 repowiki-cli deepwiki get <query-id> --mermaid
+repowiki-cli deepwiki stat Junjie-Zhu/IDPFold2 --human --stale
+repowiki-cli deepwiki stat facebook/react --stale
 ```
 
 **Scripting with exit codes**
@@ -528,6 +567,8 @@ requires **no auth** — it does not support private repos.
 repowiki-cli codewiki structure REPO [--json]
 repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
 repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
+repowiki-cli codewiki stat REPO [--stale] [--json]
+repowiki-cli codewiki cp REPO [OUTPUT_DIR]
 ```
 
 Quick start:
@@ -570,12 +611,55 @@ continuation).
 - `--save PATH` — save the answer to a Markdown file (see *Saving*). A path is
   required (CodeWiki's `ask` does not auto-name on a bare `--save`).
 
+### `codewiki stat`
+
+```bash
+repowiki-cli codewiki stat REPO [--stale] [--json]
+```
+
+Shows the commit sha the CodeWiki documentation was generated from (parsed from
+the wiki payload header by `codewiki/wiki.py::parse`).
+
+- `--stale` — compare the wiki commit against GitHub HEAD (via
+  `api.github.com/.../commits/HEAD`) and print `最新`/`过期`. CodeWiki has no
+  timestamp, so there is no `--human`; the wiki sha is a prefix of the full
+  GitHub sha when the wiki is current.
+- `--json` — emit a JSON envelope (with `stale` when `--stale` is set).
+
+**Implementation:** staleness is checked by `CodeWikiClient.github_head()`, which
+calls `GET https://api.github.com/repos/{owner}/{name}/commits/HEAD` (with
+`follow_redirects=True` to survive renamed-repo 301s) and returns the full
+40-char `sha` plus `commit.committer.date`. A wiki is current when the GitHub
+sha `startswith` the wiki's (possibly short) sha.
+
+### `codewiki cp`
+
+```bash
+repowiki-cli codewiki cp REPO [OUTPUT_DIR]
+```
+
+Exports the full wiki as one Markdown file per section, plus `llms.txt` (index)
+and `llms-full.txt` (concatenated). `OUTPUT_DIR` defaults to `owner_repo`.
+
+**Implementation:** each `Section` is rendered via
+`codewiki/wiki.py::render_section` (heading + body + `dot` diagrams) and the full
+text via `render_markdown`; both feed the shared `shared/export.py::export_pages`
+helper (see `deepwiki cp`).
+
 ## Zread
 
 [zread.ai](https://zread.ai) is a third wiki service, exposed under the `zread`
 namespace. Zread serves pre-generated docs for **public repositories**, and all
 read commands need **no auth**. The commands `ask` and `submit` require a token
 (see below).
+
+> **Implementation note:** `structure`/`contents` fetch the wiki outline and page
+> Markdown from zread's JSON REST API (`GET /api/v1/wiki/{id}` and
+> `/api/v1/wiki/{id}/page/{slug}`), not by scraping the Next.js RSC flight
+> payload. REST is more stable and faster than parsing `self.__next_f.push`. If
+> those endpoints ever change, the previous RSC-scraping implementation is
+> preserved in git history (`git log`) rather than kept as a fragile in-code
+> fallback.
 
 ```bash
 repowiki-cli zread structure REPO [--lang zh|en] [--json]
@@ -613,6 +697,13 @@ Prints the zread.ai table of contents for a repository.
 
 Prints a single page of Markdown documentation. With no `SLUG`, it prints the
 overview (first) page.
+
+The `REPO` argument also accepts a GitHub blob URL with an optional line
+fragment, which reads that source file instead of a wiki page:
+
+```bash
+repowiki-cli zread contents https://github.com/o/r/blob/main/src/a.py#L10-L20
+```
 
 - `--file PATH` — read a source file from the repository instead of a wiki page
   (mutually exclusive with `SLUG`).
@@ -745,9 +836,10 @@ Submits a repository for indexing on zread.ai. Requires a token (a JWT): log in
 to zread.ai, run
 `JSON.parse(localStorage.getItem("CGX_AUTH_STORAGE")).state.token` in the DevTools
 console, and set the result as `ZREAD_TOKEN`. Without it, `submit` prints a
-warning and skips.
+warning and skips. On success it also reports the indexing queue wait
+(`backlog` repos ahead, `estimate_minutes` ETA).
 
-- `--json` — emit a JSON envelope.
+- `--json` — emit a JSON envelope (includes an `eta` field).
 
 ### `zread refresh`
 

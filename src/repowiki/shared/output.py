@@ -52,6 +52,22 @@ def list_page_titles(text: str) -> list[str]:
     return [m.group(1).strip() for m in _PAGE_DELIMITER.finditer(text)]
 
 
+def split_pages(text: str) -> list[tuple[str, str]]:
+    """Split markdown on each ``# Page:`` delimiter into ``(title, content)``.
+
+    Content with no delimiter is returned as a single ``("Overview", text)`` page.
+    """
+    matches = list(_PAGE_DELIMITER.finditer(text))
+    if not matches:
+        return [("Overview", text.strip())]
+    pages: list[tuple[str, str]] = []
+    for i, m in enumerate(matches):
+        title = m.group(1).strip()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        pages.append((title, text[m.end():end].strip()))
+    return pages
+
+
 def filter_page(text: str, title: str) -> str:
     """Return the content of the page whose title matches (case-insensitive exact).
 

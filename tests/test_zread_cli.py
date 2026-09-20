@@ -78,6 +78,65 @@ def test_contents_file_uses_read_file(monkeypatch):
     assert "content of src/main.py" in result.output
 
 
+def test_parse_repo_arg_blob_url():
+    from repowiki.services.zread.cli import _parse_repo_arg
+
+    ref, path, start, end = _parse_repo_arg(
+        "https://github.com/owner/example/blob/main/src/a.py#L10-L20"
+    )
+    assert ref == "https://github.com/owner/example"
+    assert path == "src/a.py"
+    assert (start, end) == (10, 20)
+
+
+def test_parse_repo_arg_single_line_fragment():
+    from repowiki.services.zread.cli import _parse_repo_arg
+
+    ref, path, start, end = _parse_repo_arg("github.com/owner/example/blob/main/a.py#L10")
+    assert ref == "github.com/owner/example"
+    assert path == "a.py"
+    assert (start, end) == (10, None)
+
+
+def test_parse_repo_arg_plain_repo():
+    from repowiki.services.zread.cli import _parse_repo_arg
+
+    ref, path, start, end = _parse_repo_arg("owner/example")
+    assert ref == "owner/example"
+    assert path is None
+    assert (start, end) == (None, None)
+
+
+def test_contents_blob_url_parses_file_and_lines(monkeypatch):
+    seen = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def repo_info(self, repo):
+            seen["repo"] = repo
+            return {"repo_id": "r1"}
+
+        async def read_file(self, repo_id, path, start=None, end=None):
+            seen["path"] = path
+            seen["start"] = start
+            seen["end"] = end
+            return f"content of {path}"
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(
+        zread_app,
+        ["contents", "github.com/owner/example/blob/main/src/main.py#L10-L20"],
+    )
+    assert result.exit_code == 0
+    assert seen["repo"] == "owner/example"
+    assert seen["path"] == "src/main.py"
+    assert seen["start"] == 10
+    assert seen["end"] == 20
+    assert "content of src/main.py" in result.output
+
+
 def test_find_json(monkeypatch):
     class FakeClient:
         def __init__(self, **kwargs):
@@ -155,10 +214,35 @@ def test_submit_with_token(monkeypatch):
         async def submit(self, repo):
             return {"ok": True}
 
+        async def eta(self):
+            return {"backlog": 6, "estimate_minutes": 34}
+
     monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
     result = runner.invoke(zread_app, ["submit", "owner/example"])
     assert result.exit_code == 0
     assert "Submitted owner/example" in result.output
+    assert "6 ahead" in result.output
+    assert "34 min" in result.output
+
+
+def test_submit_json_includes_eta(monkeypatch):
+    monkeypatch.setenv("ZREAD_TOKEN", "tok")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def submit(self, repo):
+            return {"ok": True}
+
+        async def eta(self):
+            return {"backlog": 6, "estimate_minutes": 34}
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["submit", "owner/example", "--json"])
+    assert result.exit_code == 0
+    assert '"command": "submit"' in result.output
+    assert '"backlog": 6' in result.output
 
 
 def test_search_command(monkeypatch):

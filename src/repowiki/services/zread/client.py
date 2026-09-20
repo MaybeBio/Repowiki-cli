@@ -12,9 +12,7 @@ import httpx
 from repowiki.services.zread.flight import (
     WikiInfo,
     Page,
-    extract_flight,
-    extract_markdown,
-    parse_wiki,
+    parse_wiki_data,
     rewrite_callouts,
     strip_frontmatter,
 )
@@ -267,6 +265,12 @@ class ZreadClient:
         )
         return {"repo_id": repo_id, "ok": True}
 
+    async def eta(self) -> dict:
+        resp = await self._request(
+            "GET", f"{BASE}/api/v1/repo/eta", timeout=30.0, headers=self._headers(),
+        )
+        return _unwrap(resp) or {}
+
     async def github_head(self, repo: str) -> dict:
         """Return the GitHub HEAD commit for a repo: ``{"sha": ..., "when": ...}``."""
         owner, name = _split(repo)
@@ -307,24 +311,43 @@ class ZreadClient:
         return info.get("content", "")
 
     async def outline(self, repo: str) -> tuple[WikiInfo, list[Page]]:
-        owner, name = _split(repo)
+        wiki_id = await self._wiki_id(repo)
         resp = await self._request(
-            "GET", f"{BASE}/{owner}/{name}", timeout=90.0, headers=self._headers(),
+            "GET", f"{BASE}/api/v1/wiki/{wiki_id}", timeout=30.0, headers=self._headers(),
         )
-        parsed = parse_wiki(extract_flight(resp.text))
-        if parsed is None:
+        data = _unwrap(resp)
+        if not isinstance(data, dict):
             raise ZreadNotFoundError(f"no wiki found for {repo}")
-        return parsed
+        wiki_info, pages = parse_wiki_data(data)
+        if not pages:
+            raise ZreadNotFoundError(f"no wiki found for {repo}")
+        return wiki_info, pages
 
     async def page(self, repo: str, slug: str | None = None) -> str:
-        owner, name = _split(repo)
-        url = f"{BASE}/{owner}/{name}" + (f"/{slug}" if slug else "")
-        for headers in (self._headers({"RSC": "1"}), self._headers()):
-            resp = await self._request("GET", url, timeout=90.0, headers=headers)
-            md = extract_markdown(extract_flight(resp.text), slug)
-            if md:
-                return rewrite_callouts(strip_frontmatter(md))
-        raise ZreadNotFoundError(f"no markdown found for {repo}" + (f"/{slug}" if slug else ""))
+        wiki_id = await self._wiki_id(repo)
+        if slug is None:
+            _, pages = await self.outline(repo)
+            if not pages:
+                raise ZreadNotFoundError(f"no wiki pages for {repo}")
+            slug = pages[0].slug
+        resp = await self._request(
+            "GET", f"{BASE}/api/v1/wiki/{wiki_id}/page/{slug}", timeout=30.0,
+            headers=self._headers(),
+        )
+        data = _unwrap(resp)
+        if not isinstance(data, dict):
+            raise ZreadNotFoundError(f"no markdown found for {repo}/{slug}")
+        content = data.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ZreadNotFoundError(f"no markdown found for {repo}/{slug}")
+        return rewrite_callouts(strip_frontmatter(content))
+
+    async def _wiki_id(self, repo: str) -> str:
+        info = await self.repo_info(repo)
+        wiki_id = str(info.get("wiki_id") or "")
+        if not wiki_id:
+            raise ZreadNotFoundError(f"no wiki_id for {repo}")
+        return wiki_id
 
     async def ask(self, repo: str, question: str) -> str:
         if not self._token:

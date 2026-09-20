@@ -53,6 +53,33 @@ def _resolve_repo(raw: str, json_mode: bool) -> str:
         _fail(str(exc), "invalid_repo", json_mode)
 
 
+_BLOB_RE = re.compile(r"/blob/[^/]+/(.+)$")
+_LINE_FRAG_RE = re.compile(r"#L(\d+)(?:-L(\d+))?$")
+
+
+def _parse_repo_arg(raw: str) -> tuple[str, str | None, int | None, int | None]:
+    """Split a repo arg into ``(repo_ref, file_path, start, end)``.
+
+    Accepts GitHub blob URLs with an optional ``#L10`` / ``#L10-L20`` line
+    fragment, e.g. ``github.com/o/r/blob/main/src/a.py#L10-L20``.
+    """
+    value = raw.strip()
+    start: int | None = None
+    end: int | None = None
+    m = _LINE_FRAG_RE.search(value)
+    if m:
+        start = int(m.group(1))
+        if m.group(2):
+            end = int(m.group(2))
+        value = value[:m.start()].rstrip("/")
+    file_path: str | None = None
+    bm = _BLOB_RE.search(value)
+    if bm:
+        file_path = bm.group(1)
+        value = value[:bm.start()]
+    return value, file_path, start, end
+
+
 def _fail(message: str, kind: str, json_mode: bool) -> NoReturn:
     if json_mode:
         typer.echo(format_error_json(kind, message), err=True)
@@ -328,7 +355,7 @@ def structure(
 
 @zread_app.command()
 def contents(
-    repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
+    repo: str = typer.Argument(..., help="Repository (owner/repo, GitHub URL, or a blob URL with #L lines)"),
     slug: Optional[str] = typer.Argument(None, help="Page slug (default: overview)"),
     file: Optional[str] = typer.Option(None, "--file", help="Read a source file instead"),
     start: Optional[int] = typer.Option(None, "--start", help="Start line (with --file)"),
@@ -338,7 +365,14 @@ def contents(
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
 ) -> None:
     """Show a single page of documentation (default: the overview page)."""
-    resolved = _resolve_repo(repo, json)
+    raw_repo, embedded_file, embedded_start, embedded_end = _parse_repo_arg(repo)
+    resolved = _resolve_repo(raw_repo, json)
+    if file is None:
+        file = embedded_file
+    if start is None:
+        start = embedded_start
+    if end is None:
+        end = embedded_end
     if slug is not None and file is not None:
         _fail("Specify either a slug or --file, not both.", "invalid_input", json)
     client = _make_client(lang)
@@ -579,10 +613,23 @@ def submit(
             data = run_async(client.submit(resolved))
     except Exception as exc:
         _handle_exception(exc, json)
+    eta: dict = {}
+    try:
+        with status("Checking queue..."):
+            eta = run_async(client.eta())
+    except Exception:
+        pass
     if json:
-        typer.echo(format_json(resolved, "submit", data=data))
+        typer.echo(format_json(resolved, "submit", data=data, eta=eta))
     else:
-        typer.echo(f"Submitted {resolved} for indexing.")
+        message = f"Submitted {resolved} for indexing."
+        if isinstance(eta, dict):
+            backlog = eta.get("backlog")
+            estimate = eta.get("estimate_minutes")
+            if backlog is not None:
+                message += f" Queue: {backlog} ahead"
+                message += f" (~{estimate} min ETA)" if estimate is not None else "."
+        typer.echo(message)
 
 
 @zread_app.command()

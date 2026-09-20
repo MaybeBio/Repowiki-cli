@@ -83,7 +83,8 @@ def render_structure(wiki: Wiki) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def _render_section(s: Section) -> str:
+def render_section(s: Section) -> str:
+    """Render a single section as Markdown (heading + body + dot diagrams)."""
     hashes = "#" * min(max(s.level, 1), 6)
     parts = [f"{hashes} {s.title}\n"]
     body = resolve_links(s.markdown)
@@ -99,7 +100,7 @@ def _render_section(s: Section) -> str:
 def render_markdown(wiki: Wiki) -> str:
     parts = [f"# {wiki.repo_slug} (commit {wiki.commit_sha})\n"]
     for s in wiki.sections:
-        parts.append(_render_section(s))
+        parts.append(render_section(s))
     return "".join(parts)
 
 
@@ -111,7 +112,7 @@ def render_page(wiki: Wiki, title: str) -> str:
     target = title.strip().lower()
     for s in wiki.sections:
         if s.title.strip().lower() == target:
-            return _render_section(s).strip()
+            return render_section(s).strip()
     available = "\n".join(f"  - {s.title}" for s in wiki.sections) or "  - (none)"
     raise ValueError(f"Page '{title}' not found. Available pages:\n{available}")
 

@@ -141,7 +141,7 @@ def test_connection_error_returns_exit_3(monkeypatch):
     monkeypatch.setattr("repowiki.services.deepwiki.cli.DeepWikiClient", FailingClient)
     result = runner.invoke(app, ["deepwiki", "structure", "facebook/react"])
     assert result.exit_code == 3
-    assert "Could not connect" in result.output
+    assert "Failed to connect" in result.output
 
 
 def test_not_indexed_returns_exit_2(monkeypatch):
@@ -919,3 +919,164 @@ def test_warm_command_json_coerces_null(monkeypatch):
     result = runner.invoke(app, ["deepwiki", "warm", "facebook/react", "--json"])
     assert result.exit_code == 0
     assert json.loads(result.output)["status"] == "OK"
+
+
+def test_short_sha_extracts_last_segment():
+    from repowiki.services.deepwiki.cli import _short_sha
+
+    assert _short_sha("v1.9.9.5/PUBLIC/a/b/5315b279") == "5315b279"
+    assert _short_sha("v1.9.9.5/PUBLIC/a/b/59aff3e1::main") == "59aff3e1"
+    assert _short_sha("") == ""
+
+
+def test_iso_to_local_formats_utc():
+    from repowiki.services.deepwiki.cli import _iso_to_local
+
+    out = _iso_to_local("2026-02-04T06:59:37+00:00")
+    assert " " in out  # local form is space-separated (date time TZ)
+
+
+def test_stat_command(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.services.deepwiki.cli.DevinClient",
+        _fake_devin_class({
+            "repo_index": {
+                "id": "v1.9.9.5/PUBLIC/a/b/5315b279",
+                "repo_name": "a/b",
+                "last_modified": "2026-02-04T06:59:37+00:00",
+            },
+        }),
+    )
+    result = runner.invoke(app, ["deepwiki", "stat", "a/b"])
+    assert result.exit_code == 0
+    assert "commit: 5315b279" in result.output
+    assert "last_indexed" in result.output
+
+
+def test_stat_command_human(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.services.deepwiki.cli.DevinClient",
+        _fake_devin_class({
+            "repo_index": {
+                "id": "v1.9.9.5/PUBLIC/a/b/5315b279",
+                "repo_name": "a/b",
+                "last_modified": "2026-02-04T06:59:37+00:00",
+            },
+        }),
+    )
+    result = runner.invoke(app, ["deepwiki", "stat", "a/b", "--human"])
+    assert result.exit_code == 0
+    assert "last_indexed" in result.output
+    assert "(" in result.output  # --human appends the parenthesized local time
+
+
+def test_stat_stale_up_to_date(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.services.deepwiki.cli.DevinClient",
+        _fake_devin_class({
+            "repo_index": {
+                "id": "v1.9.9.5/PUBLIC/a/b/abc12345",
+                "repo_name": "a/b",
+                "last_modified": "2026-02-04T06:59:37+00:00",
+            },
+            "github_head": {"sha": "abc123456789", "when": "2026-08-07T05:46:59Z"},
+        }),
+    )
+    result = runner.invoke(app, ["deepwiki", "stat", "a/b", "--stale"])
+    assert result.exit_code == 0
+    assert "最新" in result.output
+
+
+def test_stat_stale_mismatch(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.services.deepwiki.cli.DevinClient",
+        _fake_devin_class({
+            "repo_index": {
+                "id": "v1.9.9.5/PUBLIC/a/b/5315b279",
+                "repo_name": "a/b",
+                "last_modified": "2026-02-04T06:59:37+00:00",
+            },
+            "github_head": {"sha": "0dcbe194ab8759", "when": "2026-08-07T05:46:59Z"},
+        }),
+    )
+    result = runner.invoke(app, ["deepwiki", "stat", "a/b", "--stale"])
+    assert result.exit_code == 0
+    assert "过期" in result.output
+
+
+def test_stat_json(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.services.deepwiki.cli.DevinClient",
+        _fake_devin_class({
+            "repo_index": {
+                "id": "v1.9.9.5/PUBLIC/a/b/5315b279",
+                "repo_name": "a/b",
+                "last_modified": "2026-02-04T06:59:37+00:00",
+            },
+        }),
+    )
+    result = runner.invoke(app, ["deepwiki", "stat", "a/b", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["command"] == "stat"
+    assert data["data"]["repo_name"] == "a/b"
+
+
+def test_stat_stale_json(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.services.deepwiki.cli.DevinClient",
+        _fake_devin_class({
+            "repo_index": {
+                "id": "v1.9.9.5/PUBLIC/a/b/5315b279",
+                "repo_name": "a/b",
+                "last_modified": "2026-02-04T06:59:37+00:00",
+            },
+            "github_head": {"sha": "0dcbe194ab8759", "when": "2026-08-07T05:46:59Z"},
+        }),
+    )
+    result = runner.invoke(app, ["deepwiki", "stat", "a/b", "--stale", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["stale"]["wiki_sha"] == "5315b279"
+    assert data["stale"]["github_sha"] == "0dcbe194ab8759"
+
+
+def test_stat_not_indexed(monkeypatch):
+    monkeypatch.setattr(
+        "repowiki.services.deepwiki.cli.DevinClient",
+        _fake_devin_class({"repo_index": None}),
+    )
+    result = runner.invoke(app, ["deepwiki", "stat", "nope/nope"])
+    assert result.exit_code == 2
+
+
+def test_cp_exports_pages(monkeypatch, tmp_path):
+    text = "# Page: Overview\n\n# Overview\n\nbody\n\n# Page: Other\n\n# Other\n\nother body"
+
+    class FakeClient:
+        async def read_wiki_contents(self, repo):
+            return text
+
+    monkeypatch.setattr("repowiki.services.deepwiki.cli.DeepWikiClient", FakeClient)
+    out = tmp_path / "export"
+    result = runner.invoke(app, ["deepwiki", "cp", "facebook/react", str(out)])
+    assert result.exit_code == 0
+    assert (out / "llms.txt").exists()
+    assert (out / "llms-full.txt").exists()
+    pages = [p.name for p in out.iterdir() if p.suffix == ".md"]
+    assert len(pages) == 2
+    assert "Exported 2 pages" in result.output
+
+
+def test_cp_default_output_dir(monkeypatch, tmp_path):
+    text = "# Page: Overview\n\n# Overview\n\nbody"
+
+    class FakeClient:
+        async def read_wiki_contents(self, repo):
+            return text
+
+    monkeypatch.setattr("repowiki.services.deepwiki.cli.DeepWikiClient", FakeClient)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["deepwiki", "cp", "facebook/react"])
+    assert result.exit_code == 0
+    assert (tmp_path / "facebook_react" / "llms.txt").exists()

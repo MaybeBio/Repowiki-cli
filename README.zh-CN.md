@@ -14,14 +14,14 @@
 |------|---------|------|------|
 | **DeepWiki** | `deepwiki` | MCP（Streamable HTTP）+ 逆向 REST/WebSocket | 无需 |
 | **Google Code Wiki** | `codewiki` | Google `batchexecute` RPC | 无需 |
-| **Zread** | `zread` | Next.js RSC + JSON REST + SSE | `ask` / `submit` 需要 token |
+| **Zread** | `zread` | JSON REST + SSE | `ask` / `submit` 需要 token |
 
 DeepWiki 由两个可互换的后端提供：
 
 | 后端 | 传输 | 命令 | 信息量 |
 |------|------|------|--------|
-| **MCP**（官方） | Streamable HTTP | `structure`、`contents`、`ask` | 只有正文 |
-| **逆向**（`api.devin.ai`） | REST + WebSocket | `ask`（带参数）+ `list`/`status`/`warm`/`get` | 正文、摘要、引用、源码、统计 |
+| **MCP**（官方） | Streamable HTTP | `structure`、`contents`、`ask`、`cp` | 只有正文 |
+| **逆向**（`api.devin.ai`） | REST + WebSocket | `ask`（带参数）+ `list`/`status`/`warm`/`get`/`stat` | 正文、摘要、引用、源码、统计 |
 
 MCP 后端是 DeepWiki 官方文档化的服务，公开仓库免费、无需鉴权。逆向后端是底层引擎
 `api.devin.ai`（与 DeepWiki 网页版同源）——它**不是**公开文档 API，但提供了 MCP
@@ -62,9 +62,13 @@ repowiki-cli zread contents vercel/next.js              # 概览页
 | `status REPO` | 查询仓库索引状态 | DeepWiki（逆向） |
 | `warm REPO` | 预热文档缓存 | DeepWiki（逆向） |
 | `get QUERY_ID` | 按 query id 重放历史回答 | DeepWiki（逆向） |
+| `stat REPO` | 查询仓库索引元数据 | DeepWiki（逆向） |
+| `cp REPO [OUTPUT_DIR]` | 导出整个 wiki 为 Markdown + `llms.txt` | DeepWiki（MCP） |
 | `structure REPO` | 打印文档目录 | CodeWiki |
 | `contents REPO` | 打印完整文档 | CodeWiki |
 | `ask REPO [QUESTION]` | 提问（单次或交互） | CodeWiki |
+| `stat REPO` | 查看 wiki 生成的 commit | CodeWiki |
+| `cp REPO [OUTPUT_DIR]` | 导出整个 wiki 为 Markdown + `llms.txt` | CodeWiki |
 | `structure REPO` | 打印文档目录 | Zread |
 | `contents REPO [SLUG]` | 打印某一页文档（默认概览页） | Zread |
 | `ask REPO [QUESTION]` | 提问（单次或交互，需要 token） | Zread |
@@ -103,8 +107,8 @@ repowiki-cli zread contents vercel/next.js              # 概览页
 ```
 
 DeepWiki 的 `ask` 在逆向后端提供数据时，还会附带 `summary`、`references`、
-`sources`、`stats`、`query_id`。管理命令（`list`/`status`/`warm`/`get`）省略
-`repo`，仅含 `command` + 字段。错误以 `{"error": ..., "kind": ...}` 写到 stderr。
+`sources`、`stats`、`query_id`。管理命令（`list`/`status`/`warm`/`get`/`stat`）
+省略 `repo`，仅含 `command` + 字段。错误以 `{"error": ..., "kind": ...}` 写到 stderr。
 
 ## 保存（`--save`）
 
@@ -227,6 +231,38 @@ repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
 ```
 
 按 query id 重放历史回答（逆向 `get_query`）。
+
+### `deepwiki stat`
+
+```bash
+repowiki-cli deepwiki stat REPO [--human] [--stale] [--json]
+```
+
+展示某仓库的索引元数据，来自逆向 `list_public_indexes` —— 短 commit sha
+（索引 `id` 的最后一段）和 `last_modified`（即 deepwiki.com 上显示的
+"Last indexed" 时间）。
+
+- `--human` — 把 `last_modified` 渲染成本地、以空格分隔的时间。
+- `--stale` — 把已索引的短 sha 与 GitHub HEAD（
+  `api.github.com/.../commits/HEAD`）对比，打印 `最新`/`过期`。注意：
+  refresh（重新索引）没有公开端点 —— `index_public_repo` 被 reCAPTCHA 拦截
+  —— 所以 `stat` 只能*检测*过期，无法修复。
+- `--json` — 输出 JSON 信封（设置 `--stale` 时附带 `stale`）。
+
+### `deepwiki cp`
+
+```bash
+repowiki-cli deepwiki cp REPO [OUTPUT_DIR]
+```
+
+把完整 wiki（MCP `read_wiki_contents`）按每个 `# Page:` 分节导出为一个
+Markdown 文件，外加 `llms.txt`（索引）与 `llms-full.txt`（合并全文）。
+`OUTPUT_DIR` 缺省为 `owner_repo`。
+
+**实现：** 原始 Markdown 由 `shared/output.py::split_pages` 按 `# Page:` 分隔符
+切分（没有分隔符的载荷变成单个 `Overview` 页）。文件由共享的
+`shared/export.py::export_pages` 助手写入，每页命名为 `NN-slug.md`，并额外生成
+`llms.txt`（`- [title](NN-slug.md)` 链接索引）与 `llms-full.txt`（合并全文）。
 
 ### DeepWiki 设计
 
@@ -441,6 +477,8 @@ repowiki-cli deepwiki warm facebook/react
 repowiki-cli deepwiki get <query-id>
 repowiki-cli deepwiki get <query-id> --sources
 repowiki-cli deepwiki get <query-id> --mermaid
+repowiki-cli deepwiki stat Junjie-Zhu/IDPFold2 --human --stale
+repowiki-cli deepwiki stat facebook/react --stale
 ```
 
 **脚本中利用退出码**
@@ -492,6 +530,8 @@ claude mcp add -s user -t http deepwiki https://mcp.deepwiki.com/mcp
 repowiki-cli codewiki structure REPO [--json]
 repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
 repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
+repowiki-cli codewiki stat REPO [--stale] [--json]
+repowiki-cli codewiki cp REPO [OUTPUT_DIR]
 ```
 
 快速上手：
@@ -532,11 +572,50 @@ repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
 - `--save PATH` — 把答案保存为 Markdown 文件（见「保存」）。需要指定路径
   （CodeWiki 的 `ask` 不支持裸 `--save` 自动命名）。
 
+### `codewiki stat`
+
+```bash
+repowiki-cli codewiki stat REPO [--stale] [--json]
+```
+
+展示 CodeWiki 文档所基于的 commit sha（由 `codewiki/wiki.py::parse` 从 wiki
+载荷头部解析得到）。
+
+- `--stale` — 把 wiki 的 commit 与 GitHub HEAD（`api.github.com/.../commits/HEAD`）
+  对比，打印 `最新`/`过期`。CodeWiki 没有时间戳，因此没有 `--human`；wiki 当前时
+  wiki sha 是完整 GitHub sha 的前缀。
+- `--json` — 输出 JSON 信封（设置 `--stale` 时附带 `stale`）。
+
+**实现：** 过期检测由 `CodeWikiClient.github_head()` 完成，它调用
+`GET https://api.github.com/repos/{owner}/{name}/commits/HEAD`（带
+`follow_redirects=True` 以应对改名仓库的 301），返回完整的 40 位 `sha` 与
+`commit.committer.date`。当 GitHub sha `startswith` wiki 的（可能为短）sha 时，
+wiki 即为最新。
+
+### `codewiki cp`
+
+```bash
+repowiki-cli codewiki cp REPO [OUTPUT_DIR]
+```
+
+把完整 wiki 按每个分节导出为一个 Markdown 文件，外加 `llms.txt`（索引）与
+`llms-full.txt`（合并全文）。`OUTPUT_DIR` 缺省为 `owner_repo`。
+
+**实现：** 每个 `Section` 由 `codewiki/wiki.py::render_section` 渲染（标题 + 正文 +
+`dot` 图），全文由 `render_markdown` 渲染；两者都交给共享的
+`shared/export.py::export_pages` 助手（见 `deepwiki cp`）。
+
 ## Zread
 
 [zread.ai](https://zread.ai) 是第三个 wiki 服务，挂在 `zread` 命名空间下。Zread
 提供预先生成的文档，**只读取公开仓库**，所有读取命令都**无需鉴权**；`ask` 和
 `submit` 这两个命令需要一个 token（见下文）。
+
+> **实现说明**：`structure`/`contents` 通过 zread 的 JSON REST API（`GET
+> /api/v1/wiki/{id}` 与 `/api/v1/wiki/{id}/page/{slug}`）获取目录与页面
+> Markdown，而非抓取 Next.js RSC flight payload。REST 比解析 `self.__next_f.push`
+> 更稳定、更快。若这些端点日后变更，旧的 RSC 抓取实现仍保留在 git 历史
+> （`git log`）中，而不是在代码里养一份脆弱的 fallback。
 
 ```bash
 repowiki-cli zread structure REPO [--lang zh|en] [--json]
@@ -572,6 +651,12 @@ repowiki-cli zread find react                        # 搜索仓库
 ### `zread contents`
 
 打印某一页 Markdown 文档。不带 `SLUG` 时打印概览（第一）页。
+
+`REPO` 参数也接受带行号片段的 GitHub blob URL，此时直接读取该源文件而非 wiki 页：
+
+```bash
+repowiki-cli zread contents https://github.com/o/r/blob/main/src/a.py#L10-L20
+```
 
 - `--file PATH` — 改为读取仓库中的某个源文件（与 `SLUG` 互斥）。
 - `--start N` / `--end M` — 配合 `--file`，限定行范围。
@@ -699,9 +784,10 @@ repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
 向 zread.ai 提交仓库进行索引。需要一个 token（JWT）：登录 zread.ai 后，在 DevTools
 控制台执行
 `JSON.parse(localStorage.getItem("CGX_AUTH_STORAGE")).state.token`，把结果设为
-`ZREAD_TOKEN` 环境变量。未设置时，`submit` 会打印警告并跳过。
+`ZREAD_TOKEN` 环境变量。未设置时，`submit` 会打印警告并跳过。成功后还会报告收录
+排队等待时间（前面还有 `backlog` 个仓库，预计 `estimate_minutes` 分钟）。
 
-- `--json` — 输出 JSON 信封。
+- `--json` — 输出 JSON 信封（含 `eta` 字段）。
 
 ### `zread refresh`
 

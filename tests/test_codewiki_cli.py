@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -113,3 +114,101 @@ def test_ask_empty_question_fails(monkeypatch):
     monkeypatch.setenv("REPOWIKI_CODEWIKI_MOCK", "the answer")
     result = runner.invoke(codewiki_app, ["ask", "facebook/react", ""])
     assert result.exit_code != 0
+
+
+def test_stat_command(monkeypatch):
+    wiki = _fixture_wiki()
+
+    class FakeClient:
+        async def read_wiki(self, repo):
+            return wiki
+
+    monkeypatch.setattr("repowiki.services.codewiki.cli.CodeWikiClient", FakeClient)
+    result = runner.invoke(codewiki_app, ["stat", "owner/example"])
+    assert result.exit_code == 0
+    assert "commit: abc123" in result.output
+
+
+def test_stat_stale_up_to_date(monkeypatch):
+    wiki = _fixture_wiki()
+
+    class FakeClient:
+        async def read_wiki(self, repo):
+            return wiki
+
+        async def github_head(self, repo):
+            return {"sha": "abc123456789", "when": "2026-08-07T05:46:59Z"}
+
+    monkeypatch.setattr("repowiki.services.codewiki.cli.CodeWikiClient", FakeClient)
+    result = runner.invoke(codewiki_app, ["stat", "owner/example", "--stale"])
+    assert result.exit_code == 0
+    assert "最新" in result.output
+
+
+def test_stat_stale_mismatch(monkeypatch):
+    wiki = _fixture_wiki()
+
+    class FakeClient:
+        async def read_wiki(self, repo):
+            return wiki
+
+        async def github_head(self, repo):
+            return {"sha": "0dcbe194ab8759", "when": "2026-08-07T05:46:59Z"}
+
+    monkeypatch.setattr("repowiki.services.codewiki.cli.CodeWikiClient", FakeClient)
+    result = runner.invoke(codewiki_app, ["stat", "owner/example", "--stale"])
+    assert result.exit_code == 0
+    assert "过期" in result.output
+
+
+def test_stat_stale_json(monkeypatch):
+    wiki = _fixture_wiki()
+
+    class FakeClient:
+        async def read_wiki(self, repo):
+            return wiki
+
+        async def github_head(self, repo):
+            return {"sha": "abc123456789", "when": "2026-08-07T05:46:59Z"}
+
+    monkeypatch.setattr("repowiki.services.codewiki.cli.CodeWikiClient", FakeClient)
+    result = runner.invoke(codewiki_app, ["stat", "owner/example", "--stale", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["repo"] == "owner/example"
+    assert data["command"] == "stat"
+    assert data["commit"] == "abc123"
+    assert data["stale"]["wiki_sha"] == "abc123"
+    assert data["stale"]["github_sha"] == "abc123456789"
+
+
+def test_cp_exports_pages(monkeypatch, tmp_path):
+    wiki = _fixture_wiki()
+
+    class FakeClient:
+        async def read_wiki(self, repo):
+            return wiki
+
+    monkeypatch.setattr("repowiki.services.codewiki.cli.CodeWikiClient", FakeClient)
+    out = tmp_path / "export"
+    result = runner.invoke(codewiki_app, ["cp", "owner/example", str(out)])
+    assert result.exit_code == 0
+    assert (out / "llms.txt").exists()
+    assert (out / "llms-full.txt").exists()
+    pages = [p.name for p in out.iterdir() if p.suffix == ".md"]
+    assert len(pages) == 3
+    assert "Exported 3 pages" in result.output
+
+
+def test_cp_default_output_dir(monkeypatch, tmp_path):
+    wiki = _fixture_wiki()
+
+    class FakeClient:
+        async def read_wiki(self, repo):
+            return wiki
+
+    monkeypatch.setattr("repowiki.services.codewiki.cli.CodeWikiClient", FakeClient)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(codewiki_app, ["cp", "owner/example"])
+    assert result.exit_code == 0
+    assert (tmp_path / "owner_example" / "llms.txt").exists()

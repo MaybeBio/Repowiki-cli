@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+import ssl
 import time
 from collections.abc import Callable
 from contextlib import nullcontext
@@ -114,6 +115,26 @@ def _http_detail(exc: httpx.HTTPStatusError) -> str:
     return ""
 
 
+def _is_cert_error(exc: BaseException) -> bool:
+    """True if any cause in the exception chain is a TLS cert verification error."""
+    while exc is not None:
+        if isinstance(exc, ssl.SSLCertVerificationError):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+def _connection_message(host: str, exc: httpx.TransportError) -> str:
+    """Build a connection error message, naming the host and hinting on TLS failure."""
+    message = f"Failed to connect to {host}: {exc}"
+    if _is_cert_error(exc):
+        message += (
+            " (TLS certificate verification failed; set SSL_CERT_FILE "
+            "to your CA bundle to trust a proxy/mirror)"
+        )
+    return message
+
+
 class DevinClient:
     """Client for the reverse-engineered api.devin.ai Q&A endpoints."""
 
@@ -136,7 +157,7 @@ class DevinClient:
                 resp.raise_for_status()
                 return resp.json()
         except httpx.TransportError as exc:
-            raise ConnectionError(f"Failed to connect to Devin server: {exc}") from exc
+            raise ConnectionError(_connection_message("Devin server", exc)) from exc
         except httpx.HTTPStatusError as exc:
             raise ToolError(
                 f"Devin API returned HTTP {exc.response.status_code}{_http_detail(exc)}"
@@ -159,7 +180,7 @@ class DevinClient:
                 resp.raise_for_status()
                 return resp.json()
         except httpx.TransportError as exc:
-            raise ConnectionError(f"Failed to connect to Devin server: {exc}") from exc
+            raise ConnectionError(_connection_message("Devin server", exc)) from exc
         except httpx.HTTPStatusError as exc:
             raise ToolError(
                 f"Devin API returned HTTP {exc.response.status_code}{_http_detail(exc)}"
@@ -283,6 +304,45 @@ class DevinClient:
 
     async def warm_public_repo(self, repo: str) -> dict:
         return await self._post_json("/ada/warm_public_repo", params={"repo_name": repo})
+
+    async def repo_index(self, repo: str) -> dict | None:
+        """Return the ``list_public_indexes`` entry matching ``repo`` exactly.
+
+        The search is fuzzy, so filter to the entry whose ``repo_name`` equals
+        the requested repo; return ``None`` when the repo has no index.
+        """
+        data = await self.list_public_indexes(repo)
+        for entry in data.get("indices") or []:
+            if entry.get("repo_name") == repo:
+                return entry
+        return None
+
+    async def github_head(self, repo: str) -> dict:
+        """Return the GitHub HEAD sha and commit date for ``repo``.
+
+        ``id`` in the index (e.g. ``…/IDPFold2/5315b279``) ends in a short
+        commit sha, so compare it against GitHub HEAD to detect a stale wiki.
+        """
+        owner, name = repo.split("/", 1)
+        try:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                resp = await client.get(
+                    f"https://api.github.com/repos/{owner}/{name}/commits/HEAD"
+                )
+                resp.raise_for_status()
+                try:
+                    commit = resp.json()
+                except json.JSONDecodeError as exc:
+                    raise ToolError("invalid JSON response from GitHub") from exc
+        except httpx.TransportError as exc:
+            raise ConnectionError(_connection_message("GitHub", exc)) from exc
+        except httpx.HTTPStatusError as exc:
+            raise ToolError(f"GitHub API returned HTTP {exc.response.status_code}") from exc
+        if not isinstance(commit, dict):
+            raise ToolError("unexpected GitHub response")
+        committer = commit.get("commit", {}).get("committer") or {}
+        when = committer.get("date") if isinstance(committer, dict) else None
+        return {"sha": commit.get("sha") or "", "when": when}
 
     async def get_query(self, query_id: str) -> Answer:
         data = await self._get_json(f"/ada/query/{query_id}")

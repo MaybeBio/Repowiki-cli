@@ -19,18 +19,17 @@ async def _no_sleep(_delay: float) -> None:
     return None
 
 
-def _flight_html(pages=1):
-    node = {
-        "wiki": {
-            "info": {"wiki_id": "w1"},
+def _wiki_json(pages=1):
+    return {
+        "code": 0,
+        "data": {
+            "info": {"wiki_id": "w1", "repo_id": "r1"},
             "pages": [
                 {"page_id": f"p{i}", "slug": f"s{i}", "topic": f"T{i}", "order": i}
                 for i in range(pages)
             ],
-        }
+        },
     }
-    payload_str = json.dumps({"x": node})
-    return f'<script>self.__next_f.push([1,{json.dumps(payload_str)}])</script>'
 
 
 def test_repo_info_hits_repo_endpoint():
@@ -202,6 +201,18 @@ def test_refresh_requires_repo_id():
         run_async(client.refresh("o/r"))
 
 
+def test_eta_hits_endpoint():
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"code": 0, "data": {"backlog": 6, "estimate_minutes": 34}})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    assert run_async(client.eta()) == {"backlog": 6, "estimate_minutes": 34}
+    assert "api/v1/repo/eta" in seen["url"]
+
+
 def test_github_head_hits_github_api():
     seen = {}
 
@@ -221,29 +232,38 @@ def test_github_head_hits_github_api():
     assert "api.github.com/repos/o/r/commits/HEAD" in seen["url"]
 
 
-def test_outline_parses_flight():
+def test_outline_hits_wiki_endpoint():
+    seen = {}
+
     def handler(request):
-        return httpx.Response(200, text=_flight_html(2))
+        url = str(request.url)
+        if "repo/github" in url:
+            return httpx.Response(200, json={"code": 0, "data": {"repo_id": "r1", "wiki_id": "w1"}})
+        seen["url"] = url
+        return httpx.Response(200, json=_wiki_json(2))
 
     client = ZreadClient(transport=httpx.MockTransport(handler))
     _, pages = run_async(client.outline("o/r"))
     assert [p.slug for p in pages] == ["s0", "s1"]
+    assert "api/v1/wiki/w1" in seen["url"]
 
 
-def test_page_sends_rsc_header():
+def test_page_hits_wiki_page_endpoint():
     seen = {}
 
     def handler(request):
-        seen["rsc"] = request.headers.get("RSC")
-        body = "---\nslug: s0\n---\n\n# Body"
-        b = body.encode("utf-8")
-        payload = f"0:T{len(b):x},{body}"
-        html = f'<script>self.__next_f.push([1,{json.dumps(payload)}])</script>'
-        return httpx.Response(200, text=html)
+        url = str(request.url)
+        if "repo/github" in url:
+            return httpx.Response(200, json={"code": 0, "data": {"repo_id": "r1", "wiki_id": "w1"}})
+        seen["url"] = url
+        return httpx.Response(
+            200,
+            json={"code": 0, "data": {"level": "Beginner", "content": "---\nslug: s0\n---\n\n# Body"}},
+        )
 
     client = ZreadClient(transport=httpx.MockTransport(handler))
     md = run_async(client.page("o/r", "s0"))
-    assert seen["rsc"] == "1"
+    assert "api/v1/wiki/w1/page/s0" in seen["url"]
     assert "# Body" in md
     assert "slug:" not in md
 
@@ -305,7 +325,9 @@ def test_ask_flow(monkeypatch):
             return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
         if "repo/github" in url:
             return httpx.Response(200, json={"code": 0, "data": {"repo_id": "r1", "wiki_id": "w1"}})
-        return httpx.Response(200, text=_flight_html(1))
+        if "/api/v1/wiki/" in url:
+            return httpx.Response(200, json=_wiki_json(1))
+        return httpx.Response(404)
 
     client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", model="glm-5.1")
     answer = run_async(client.ask("o/r", "q?"))

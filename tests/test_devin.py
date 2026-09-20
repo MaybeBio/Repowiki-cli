@@ -344,6 +344,37 @@ async def test_warm_public_repo(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_repo_index_filters_exact_match(monkeypatch):
+    fake = _MgmtClient([{"indices": [
+        {"id": "v1.9.9.5/PUBLIC/a/b/5315b279", "repo_name": "a/b", "last_modified": "2026-02-04T06:59:37+00:00"},
+        {"id": "v1/PUBLIC/a/bc/abc12345", "repo_name": "a/bc", "last_modified": "2026-01-01T00:00:00+00:00"},
+    ], "needs_reindex": [], "pending_repos": []}])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    entry = await devin_mod.DevinClient().repo_index("a/b")
+    assert entry["repo_name"] == "a/b"
+    assert entry["id"].endswith("5315b279")
+
+
+@pytest.mark.asyncio
+async def test_repo_index_none_when_absent(monkeypatch):
+    fake = _MgmtClient([{"indices": [], "needs_reindex": [], "pending_repos": []}])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    assert await devin_mod.DevinClient().repo_index("a/b") is None
+
+
+@pytest.mark.asyncio
+async def test_github_head_hits_github_api(monkeypatch):
+    fake = _MgmtClient([{
+        "sha": "0dcbe194ab8759",
+        "commit": {"committer": {"date": "2026-08-07T05:46:59Z"}},
+    }])
+    monkeypatch.setattr(devin_mod.httpx, "AsyncClient", lambda **kw: fake)
+    result = await devin_mod.DevinClient().github_head("a/b")
+    assert result == {"sha": "0dcbe194ab8759", "when": "2026-08-07T05:46:59Z"}
+    assert fake.calls == [("GET", "https://api.github.com/repos/a/b/commits/HEAD", None)]
+
+
+@pytest.mark.asyncio
 async def test_get_query_parses_answer(monkeypatch):
     q = {"state": "done", "error": None, "response": [{"type": "chunk", "data": "hi"}]}
     fake = _MgmtClient([{"queries": [q]}])
