@@ -202,6 +202,25 @@ def test_refresh_requires_repo_id():
         run_async(client.refresh("o/r"))
 
 
+def test_github_head_hits_github_api():
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        return httpx.Response(
+            200,
+            json={
+                "sha": "abc123",
+                "commit": {"committer": {"date": "2026-08-19T10:00:00Z"}},
+            },
+        )
+
+    client = ZreadClient(transport=httpx.MockTransport(handler))
+    head = run_async(client.github_head("o/r"))
+    assert head == {"sha": "abc123", "when": "2026-08-19T10:00:00Z"}
+    assert "api.github.com/repos/o/r/commits/HEAD" in seen["url"]
+
+
 def test_outline_parses_flight():
     def handler(request):
         return httpx.Response(200, text=_flight_html(2))

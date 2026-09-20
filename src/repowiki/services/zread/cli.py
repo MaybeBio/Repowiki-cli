@@ -6,6 +6,7 @@ import asyncio
 import os
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import NoReturn, Optional
 
@@ -207,10 +208,51 @@ def _format_trending(groups: list) -> str:
     return "\n".join(lines).strip()
 
 
-def _format_stat(data: dict) -> str:
+def _human_time(ts: object) -> str:
+    try:
+        return datetime.fromtimestamp(int(ts)).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    except (TypeError, ValueError, OSError):
+        return str(ts)
+
+
+def _format_last_commit(value: object, human: bool) -> str:
+    if not isinstance(value, dict):
+        return str(value)
+    parts = []
+    for k, v in value.items():
+        if human and k == "when":
+            parts.append(f"'when': {v} ({_human_time(v)})")
+        else:
+            parts.append(f"{k!r}: {v!r}")
+    return "{" + ", ".join(parts) + "}"
+
+
+def _format_stat(data: dict, human: bool = False) -> str:
     if not data:
         return "No data."
-    return "\n".join(f"- {k}: {v}" for k, v in data.items())
+    lines = []
+    for k, v in data.items():
+        if human and k in ("created_at", "updated_at"):
+            lines.append(f"- {k}: {v} ({_human_time(v)})")
+        elif k == "last_commit":
+            lines.append(f"- {k}: {_format_last_commit(v, human)}")
+        else:
+            lines.append(f"- {k}: {v}")
+    return "\n".join(lines)
+
+
+def _format_stale(info: dict) -> str:
+    zread_sha = info.get("zread_sha") or ""
+    github_sha = info.get("github_sha") or ""
+    when = info.get("github_when") or ""
+    if not github_sha:
+        return "Could not fetch GitHub HEAD."
+    if not zread_sha:
+        return "No last_commit.hash in zread data."
+    if zread_sha == github_sha:
+        return f"最新 (up-to-date): {github_sha}"
+    suffix = f" ({when})" if when else ""
+    return f"过期 (stale): zread {zread_sha[:7]} != github {github_sha[:7]}{suffix}"
 
 
 def _format_search(results: list) -> str:
@@ -419,6 +461,8 @@ def search(
 def stat(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     lang: Optional[str] = typer.Option(None, "--lang", help="Language (zh|en)"),
+    human: bool = typer.Option(False, "--human", help="Show timestamps as human-readable times"),
+    stale: bool = typer.Option(False, "--stale", help="Compare last_commit against GitHub HEAD"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
 ) -> None:
     """Show repository info and index status on zread.ai."""
@@ -427,12 +471,29 @@ def stat(
     try:
         with status("Fetching status..."):
             data = run_async(client.repo_info(resolved))
+        stale_info: dict | None = None
+        if stale:
+            last_commit = data.get("last_commit") if isinstance(data, dict) else None
+            zread_sha = (last_commit or {}).get("hash") if isinstance(last_commit, dict) else None
+            with status("Checking GitHub HEAD..."):
+                head = run_async(client.github_head(resolved))
+            stale_info = {
+                "zread_sha": zread_sha or "",
+                "github_sha": head.get("sha") or "",
+                "github_when": head.get("when") or "",
+            }
     except Exception as exc:
         _handle_exception(exc, json)
     if json:
-        typer.echo(format_json(resolved, "stat", data=data))
+        fields: dict[str, object] = {"data": data}
+        if stale_info is not None:
+            fields["stale"] = stale_info
+        typer.echo(format_json(resolved, "stat", **fields))
     else:
-        typer.echo(format_result("Zread", resolved, "stat", _format_stat(data)))
+        text = _format_stat(data, human)
+        if stale_info is not None:
+            text += "\n\n" + _format_stale(stale_info)
+        typer.echo(format_result("Zread", resolved, "stat", text))
 
 
 @zread_app.command()

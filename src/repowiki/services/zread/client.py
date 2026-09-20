@@ -267,6 +267,23 @@ class ZreadClient:
         )
         return {"repo_id": repo_id, "ok": True}
 
+    async def github_head(self, repo: str) -> dict:
+        """Return the GitHub HEAD commit for a repo: ``{"sha": ..., "when": ...}``."""
+        owner, name = _split(repo)
+        resp = await self._request(
+            "GET", f"https://api.github.com/repos/{owner}/{name}/commits/HEAD",
+            timeout=30.0, headers=self._headers(),
+        )
+        try:
+            commit = resp.json()
+        except json.JSONDecodeError as exc:
+            raise ZreadError("invalid JSON response from GitHub") from exc
+        if not isinstance(commit, dict):
+            raise ZreadError("unexpected GitHub response")
+        committer = commit.get("commit", {}).get("committer") or {}
+        when = committer.get("date") if isinstance(committer, dict) else None
+        return {"sha": commit.get("sha") or "", "when": when}
+
     async def read_file(
         self, repo_id: str, path: str,
         start: int | None = None, end: int | None = None,

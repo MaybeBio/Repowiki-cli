@@ -216,3 +216,74 @@ def test_refresh_json(monkeypatch):
     result = runner.invoke(zread_app, ["refresh", "owner/example", "--json"])
     assert result.exit_code == 0
     assert '"command": "refresh"' in result.output
+
+
+def test_stat_human_formats_timestamps(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def repo_info(self, repo):
+            return {
+                "created_at": 1753248298,
+                "updated_at": 1775500995,
+                "last_commit": {"hash": "abc123", "when": 1775043592},
+            }
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["stat", "owner/example", "--human"])
+    assert result.exit_code == 0
+    assert "2025-07-23" in result.output
+    assert "2026-04-01" in result.output
+
+
+def test_stat_stale_up_to_date(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def repo_info(self, repo):
+            return {"last_commit": {"hash": "abc123", "when": 1775043592}}
+
+        async def github_head(self, repo):
+            return {"sha": "abc123", "when": "2026-08-19T10:00:00Z"}
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["stat", "owner/example", "--stale"])
+    assert result.exit_code == 0
+    assert "最新" in result.output
+
+
+def test_stat_stale_mismatch(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def repo_info(self, repo):
+            return {"last_commit": {"hash": "abc123", "when": 1775043592}}
+
+        async def github_head(self, repo):
+            return {"sha": "def456", "when": "2026-08-19T10:00:00Z"}
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["stat", "owner/example", "--stale"])
+    assert result.exit_code == 0
+    assert "过期" in result.output
+
+
+def test_stat_stale_json(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def repo_info(self, repo):
+            return {"last_commit": {"hash": "abc123", "when": 1775043592}}
+
+        async def github_head(self, repo):
+            return {"sha": "def456", "when": "2026-08-19T10:00:00Z"}
+
+    monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
+    result = runner.invoke(zread_app, ["stat", "owner/example", "--stale", "--json"])
+    assert result.exit_code == 0
+    assert '"stale"' in result.output
+    assert '"github_sha": "def456"' in result.output

@@ -582,7 +582,7 @@ repowiki-cli zread structure REPO [--lang zh|en] [--json]
 repowiki-cli zread contents REPO [SLUG] [--file PATH] [--start N] [--end M] [--lang zh|en] [--rich] [--json]
 repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH]
 repowiki-cli zread find QUERY [--limit N] [--lang zh|en] [--json]
-repowiki-cli zread stat REPO [--lang zh|en] [--json]
+repowiki-cli zread stat REPO [--lang zh|en] [--human] [--stale] [--json]
 repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
 repowiki-cli zread top [WEEKS] [--lang zh|en] [--json]
 repowiki-cli zread rand [TOPIC] [--lang zh|en] [--json]
@@ -657,7 +657,53 @@ Searches zread.ai for repositories.
 Prints repository info and index status on zread.ai.
 
 - `--lang zh|en` — language.
+- `--human` — render the timestamps (`created_at`, `updated_at`,
+  `last_commit.when`) as human-readable local times.
+- `--stale` — fetch GitHub HEAD and compare its commit sha against
+  `last_commit.hash`, printing an up-to-date / stale verdict.
 - `--json` — emit a JSON envelope.
+
+```bash
+❯ repowiki-cli zread stat google-deepmind/alphafold3 --human
+## Zread: google-deepmind/alphafold3 (stat)
+
+- repo_id: 5fa748a6-6785-11f0-817c-3a18d81350c2
+- owner: google-deepmind
+- name: alphafold3
+- url: https://github.com/google-deepmind/alphafold3
+- description: AlphaFold 3 inference pipeline.
+- description_zh: AlphaFold 3 推理管线实现
+- star_count: 8570
+- language: python
+- topics: []
+- wiki_id: 89e1aa24-7878-494b-95a1-7de0c860b94e
+- status: success
+- visibility: public
+- created_at: 1753248298 (2025-07-23 13:24:58 CST)
+- updated_at: 1789875263 (2026-09-20 11:34:23 CST)
+- last_commit: {'hash': 'c0f97eda2f1f482fd94d3a38bece18c7069b4a5c', 'when': 1787154197 (2026-08-19 23:43:17 CST)}
+
+❯ repowiki-cli zread stat google-deepmind/alphafold3 --stale
+## Zread: google-deepmind/alphafold3 (stat)
+
+- repo_id: 5fa748a6-6785-11f0-817c-3a18d81350c2
+- owner: google-deepmind
+- name: alphafold3
+- url: https://github.com/google-deepmind/alphafold3
+- description: AlphaFold 3 inference pipeline.
+- description_zh: AlphaFold 3 推理管线实现
+- star_count: 8570
+- language: python
+- topics: []
+- wiki_id: 89e1aa24-7878-494b-95a1-7de0c860b94e
+- status: success
+- visibility: public
+- created_at: 1753248298
+- updated_at: 1789875263
+- last_commit: {'hash': 'c0f97eda2f1f482fd94d3a38bece18c7069b4a5c', 'when': 1787154197}
+
+最新 (up-to-date): c0f97eda2f1f482fd94d3a38bece18c7069b4a5c
+```
 
 ### `zread search`
 
