@@ -192,9 +192,10 @@ def test_cp_writes_files(monkeypatch, tmp_path):
     monkeypatch.setattr("repowiki.services.zread.cli.ZreadClient", FakeClient)
     result = runner.invoke(zread_app, ["cp", "owner/example", str(tmp_path)])
     assert result.exit_code == 0
-    assert (tmp_path / "00-a.md").exists()
+    assert (tmp_path / "a.md").exists()
     assert (tmp_path / "llms.txt").exists()
     assert (tmp_path / "llms-full.txt").exists()
+    assert (tmp_path / "README.md").exists()
 
 
 def test_submit_skips_without_token(monkeypatch):

@@ -63,12 +63,12 @@ repowiki-cli zread contents vercel/next.js              # 概览页
 | `warm REPO` | 预热文档缓存 | DeepWiki（逆向） |
 | `get QUERY_ID` | 按 query id 重放历史回答 | DeepWiki（逆向） |
 | `stat REPO` | 查询仓库索引元数据 | DeepWiki（逆向） |
-| `cp REPO [OUTPUT_DIR]` | 导出整个 wiki 为 Markdown + `llms.txt` | DeepWiki（MCP） |
+| `cp REPO [OUTPUT_DIR]` | 导出整个 wiki 为 Markdown + `llms.txt`/`README.md` | DeepWiki（MCP） |
 | `structure REPO` | 打印文档目录 | CodeWiki |
 | `contents REPO` | 打印完整文档 | CodeWiki |
 | `ask REPO [QUESTION]` | 提问（单次或交互） | CodeWiki |
 | `stat REPO` | 查看 wiki 生成的 commit | CodeWiki |
-| `cp REPO [OUTPUT_DIR]` | 导出整个 wiki 为 Markdown + `llms.txt` | CodeWiki |
+| `cp REPO [OUTPUT_DIR]` | 导出整个 wiki 为 Markdown + `llms.txt`/`README.md` | CodeWiki |
 | `structure REPO` | 打印文档目录 | Zread |
 | `contents REPO [SLUG]` | 打印某一页文档（默认概览页） | Zread |
 | `ask REPO [QUESTION]` | 提问（单次或交互，需要 token） | Zread |
@@ -76,7 +76,7 @@ repowiki-cli zread contents vercel/next.js              # 概览页
 | `stat REPO` | 查询仓库信息与索引状态 | Zread |
 | `top [WEEKS]` | 打印趋势榜 | Zread |
 | `rand [TOPIC]` | 随机仓库推荐 | Zread |
-| `cp REPO [OUTPUT_DIR]` | 导出整个 wiki 为 Markdown + `llms.txt` | Zread |
+| `cp REPO [OUTPUT_DIR]` | 导出整个 wiki 为 Markdown + `llms.txt`/`README.md` | Zread |
 | `submit REPO` | 提交仓库进行索引（需要 token） | Zread |
 
 每个服务在下方各自独立成节：[DeepWiki](#deepwiki)、[CodeWiki](#codewiki)、
@@ -256,13 +256,14 @@ repowiki-cli deepwiki cp REPO [OUTPUT_DIR]
 ```
 
 把完整 wiki（MCP `read_wiki_contents`）按每个 `# Page:` 分节导出为一个
-Markdown 文件，外加 `llms.txt`（索引）与 `llms-full.txt`（合并全文）。
+Markdown 文件，外加 `llms.txt`/`README.md`（索引）与 `llms-full.txt`（合并全文）。
 `OUTPUT_DIR` 缺省为 `owner_repo`。
 
 **实现：** 原始 Markdown 由 `shared/output.py::split_pages` 按 `# Page:` 分隔符
 切分（没有分隔符的载荷变成单个 `Overview` 页）。文件由共享的
 `shared/export.py::export_pages` 助手写入，每页命名为 `NN-slug.md`，并额外生成
-`llms.txt`（`- [title](NN-slug.md)` 链接索引）与 `llms-full.txt`（合并全文）。
+`llms.txt`（`- [title](NN-slug.md)` 链接索引）、内容相同的 `README.md`（供 GitHub
+自动渲染）与 `llms-full.txt`（合并全文）。
 
 ### DeepWiki 设计
 
@@ -598,8 +599,8 @@ wiki 即为最新。
 repowiki-cli codewiki cp REPO [OUTPUT_DIR]
 ```
 
-把完整 wiki 按每个分节导出为一个 Markdown 文件，外加 `llms.txt`（索引）与
-`llms-full.txt`（合并全文）。`OUTPUT_DIR` 缺省为 `owner_repo`。
+把完整 wiki 按每个分节导出为一个 Markdown 文件，外加 `llms.txt`/`README.md`
+（索引）与 `llms-full.txt`（合并全文）。`OUTPUT_DIR` 缺省为 `owner_repo`。
 
 **实现：** 每个 `Section` 由 `codewiki/wiki.py::render_section` 渲染（标题 + 正文 +
 `dot` 图），全文由 `render_markdown` 渲染；两者都交给共享的
@@ -773,7 +774,7 @@ repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
 
 ### `zread cp`
 
-把整个 wiki 导出为 Markdown（`NN-slug.md` 文件）以及 `llms.txt` 和
+把整个 wiki 导出为 Markdown（`NN-slug.md` 文件）以及 `llms.txt`、`README.md` 和
 `llms-full.txt`，写入 `OUTPUT_DIR`（默认使用仓库名）。
 
 - `--concurrency N` — 并发抓取页数（默认 `5`）。

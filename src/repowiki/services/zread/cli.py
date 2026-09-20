@@ -320,13 +320,15 @@ async def _export(client: ZreadClient, repo: str, out_dir: str, concurrency: int
     out.mkdir(parents=True, exist_ok=True)
     entries = []
     for p, md in results:
-        fname = f"{p.order:02d}-{p.slug}.md"
+        fname = f"{p.slug}.md"
         (out / fname).write_text(md, encoding="utf-8")
         entries.append((p, fname))
     index = ["# " + repo, ""]
     for p, fname in entries:
         index.append(f"- [{p.topic}]({fname})")
-    (out / "llms.txt").write_text("\n".join(index) + "\n", encoding="utf-8")
+    index_text = "\n".join(index) + "\n"
+    (out / "llms.txt").write_text(index_text, encoding="utf-8")
+    (out / "README.md").write_text(index_text, encoding="utf-8")
     full = "\n\n".join(f"# {p.topic}\n\n{md}" for p, md in results)
     (out / "llms-full.txt").write_text(full + "\n", encoding="utf-8")
     return len(entries)

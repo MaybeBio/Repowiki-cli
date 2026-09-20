@@ -1,4 +1,4 @@
-"""Export wiki pages as Markdown files plus llms.txt indexes."""
+"""Export wiki pages as Markdown files plus llms.txt / README.md indexes."""
 
 from __future__ import annotations
 
@@ -13,10 +13,11 @@ def _safe_name(title: str, index: int) -> str:
 
 
 def export_pages(out_dir: str, repo: str, pages: list[tuple[str, str]], full: str) -> int:
-    """Write one file per page plus ``llms.txt`` / ``llms-full.txt``.
+    """Write one file per page plus ``llms.txt`` / ``README.md`` / ``llms-full.txt``.
 
     ``pages`` is a list of ``(title, markdown)``; ``full`` is the complete
-    concatenated markdown. Returns the number of pages written.
+    concatenated markdown. ``llms.txt`` and ``README.md`` carry the same page
+    index (``README.md`` for GitHub auto-rendering). Returns the page count.
     """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -28,6 +29,8 @@ def export_pages(out_dir: str, repo: str, pages: list[tuple[str, str]], full: st
     index = ["# " + repo, ""]
     for title, fname in entries:
         index.append(f"- [{title}]({fname})")
-    (out / "llms.txt").write_text("\n".join(index) + "\n", encoding="utf-8")
+    index_text = "\n".join(index) + "\n"
+    (out / "llms.txt").write_text(index_text, encoding="utf-8")
+    (out / "README.md").write_text(index_text, encoding="utf-8")
     (out / "llms-full.txt").write_text(full + "\n", encoding="utf-8")
     return len(entries)

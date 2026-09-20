@@ -195,7 +195,8 @@ def test_cp_exports_pages(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert (out / "llms.txt").exists()
     assert (out / "llms-full.txt").exists()
-    pages = [p.name for p in out.iterdir() if p.suffix == ".md"]
+    assert (out / "README.md").exists()
+    pages = [p.name for p in out.iterdir() if p.suffix == ".md" and p.name != "README.md"]
     assert len(pages) == 3
     assert "Exported 3 pages" in result.output
 

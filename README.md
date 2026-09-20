@@ -69,12 +69,12 @@ repowiki-cli zread contents vercel/next.js              # overview page
 | `warm REPO` | Pre-warm a repo's docs cache | DeepWiki (reverse) |
 | `get QUERY_ID` | Replay a past answer by query id | DeepWiki (reverse) |
 | `stat REPO` | Report a repo's index metadata | DeepWiki (reverse) |
-| `cp REPO [OUTPUT_DIR]` | Export the whole wiki as Markdown + `llms.txt` | DeepWiki (MCP) |
+| `cp REPO [OUTPUT_DIR]` | Export the whole wiki as Markdown + `llms.txt`/`README.md` | DeepWiki (MCP) |
 | `structure REPO` | Print the documentation table of contents | CodeWiki |
 | `contents REPO` | Print the full documentation | CodeWiki |
 | `ask REPO [QUESTION]` | Answer a question (single-shot or interactive) | CodeWiki |
 | `stat REPO` | Show the commit the wiki was generated from | CodeWiki |
-| `cp REPO [OUTPUT_DIR]` | Export the whole wiki as Markdown + `llms.txt` | CodeWiki |
+| `cp REPO [OUTPUT_DIR]` | Export the whole wiki as Markdown + `llms.txt`/`README.md` | CodeWiki |
 | `structure REPO` | Print the documentation table of contents | Zread |
 | `contents REPO [SLUG]` | Print a page of documentation (default: overview) | Zread |
 | `ask REPO [QUESTION]` | Answer a question (single-shot or interactive, needs token) | Zread |
@@ -82,7 +82,7 @@ repowiki-cli zread contents vercel/next.js              # overview page
 | `stat REPO` | Report a repo's info and index status | Zread |
 | `top [WEEKS]` | Show the trending list | Zread |
 | `rand [TOPIC]` | Get a random repository recommendation | Zread |
-| `cp REPO [OUTPUT_DIR]` | Export the whole wiki as Markdown + `llms.txt` | Zread |
+| `cp REPO [OUTPUT_DIR]` | Export the whole wiki as Markdown + `llms.txt`/`README.md` | Zread |
 | `submit REPO` | Submit a repo for indexing (needs token) | Zread |
 
 Each service is documented in its own section below: [DeepWiki](#deepwiki),
@@ -272,14 +272,15 @@ repowiki-cli deepwiki cp REPO [OUTPUT_DIR]
 ```
 
 Exports the full wiki (MCP `read_wiki_contents`) as one Markdown file per
-`# Page:` section, plus `llms.txt` (index) and `llms-full.txt` (concatenated).
-`OUTPUT_DIR` defaults to `owner_repo`.
+`# Page:` section, plus `llms.txt` / `README.md` (index) and `llms-full.txt`
+(concatenated). `OUTPUT_DIR` defaults to `owner_repo`.
 
 **Implementation:** the raw Markdown is split on `# Page:` delimiters by
 `shared/output.py::split_pages` (a payload with no delimiters becomes a single
 `Overview` page). Files are written by the shared `shared/export.py::export_pages`
 helper, which names each page `NN-slug.md` and also emits `llms.txt` (index of
-`- [title](NN-slug.md)` links) and `llms-full.txt` (the whole concatenated text).
+`- [title](NN-slug.md)` links), a `README.md` with the same index for GitHub
+auto-rendering, and `llms-full.txt` (the whole concatenated text).
 
 ### DeepWiki design
 
@@ -638,8 +639,9 @@ sha `startswith` the wiki's (possibly short) sha.
 repowiki-cli codewiki cp REPO [OUTPUT_DIR]
 ```
 
-Exports the full wiki as one Markdown file per section, plus `llms.txt` (index)
-and `llms-full.txt` (concatenated). `OUTPUT_DIR` defaults to `owner_repo`.
+Exports the full wiki as one Markdown file per section, plus `llms.txt` /
+`README.md` (index) and `llms-full.txt` (concatenated). `OUTPUT_DIR` defaults to
+`owner_repo`.
 
 **Implementation:** each `Section` is rendered via
 `codewiki/wiki.py::render_section` (heading + body + `dot` diagrams) and the full
@@ -824,8 +826,9 @@ Prints a random repository recommendation, optionally filtered by `TOPIC`.
 
 ### `zread cp`
 
-Exports the whole wiki as Markdown (`NN-slug.md` files) plus `llms.txt` and
-`llms-full.txt` into `OUTPUT_DIR` (defaults to the repository name).
+Exports the whole wiki as Markdown (`NN-slug.md` files) plus `llms.txt`,
+`README.md`, and `llms-full.txt` into `OUTPUT_DIR` (defaults to the repository
+name).
 
 - `--concurrency N` — parallel page fetches (default `5`).
 - `--lang zh|en` — language.
