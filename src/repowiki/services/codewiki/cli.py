@@ -16,6 +16,7 @@ from repowiki.services.codewiki.client import (
 from repowiki.services.codewiki.wiki import render_markdown, render_page, render_section, render_structure
 from repowiki.shared.async_ import run_async
 from repowiki.shared.export import export_pages
+from repowiki.shared.github import format_stale
 from repowiki.shared.model import Answer
 from repowiki.shared.output import (
     filter_page,
@@ -28,7 +29,12 @@ from repowiki.shared.output import (
     status,
 )
 from repowiki.shared.repo import normalize_repo
-from repowiki.shared.save import append_entry
+from repowiki.shared.save import (
+    AutoSaveCommand,
+    SAVE_AUTO,
+    append_entry,
+    default_save_path,
+)
 
 codewiki_app = typer.Typer(add_completion=False, help="Query Google Code Wiki documentation.")
 
@@ -195,7 +201,7 @@ def contents(
     _emit(resolved, "contents", text, rich, json, **fields)
 
 
-@codewiki_app.command()
+@codewiki_app.command(cls=AutoSaveCommand)
 def ask(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     question: Optional[str] = typer.Argument(
@@ -204,11 +210,13 @@ def ask(
     rich: bool = typer.Option(False, "--rich", help="Render Markdown with rich"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
     save: Optional[str] = typer.Option(
-        None, "--save", help="Save the answer to a Markdown file (appends)."
+        None, "--save", help="Save answers to a Markdown file. Bare --save auto-names "
+        "the file; --save PATH writes/appends to PATH."
     ),
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo, json)
+    save_path = default_save_path(resolved) if save == SAVE_AUTO else save
     if question is not None:
         if not question.strip():
             _fail("Question must not be empty.", "invalid_input", json)
@@ -225,7 +233,7 @@ def ask(
             typer.echo(format_json(resolved, "ask", question=question, answer=answer.body))
         else:
             _emit(resolved, "ask", format_answer(answer), rich, False)
-        _append_save(save, resolved, question, answer.body)
+        _append_save(save_path, resolved, question, answer.body)
         return
 
     if json:
@@ -239,23 +247,9 @@ def ask(
     typer.echo("Ask a question, or /exit to quit.")
     typer.echo()
     try:
-        run_async(_repl(resolved, rich, save))
+        run_async(_repl(resolved, rich, save_path))
     except Exception as exc:
         _handle_exception(exc, False)
-
-
-def _format_stale(info: dict) -> str:
-    wiki_sha = info.get("wiki_sha") or ""
-    github_sha = info.get("github_sha") or ""
-    when = info.get("github_when") or ""
-    if not github_sha:
-        return "Could not fetch GitHub HEAD."
-    if not wiki_sha:
-        return "No commit sha in the wiki."
-    if github_sha.startswith(wiki_sha):
-        return f"最新 (up-to-date): {wiki_sha}"
-    suffix = f" ({when})" if when else ""
-    return f"过期 (stale): wiki {wiki_sha[:7]} != github {github_sha[:7]}{suffix}"
 
 
 @codewiki_app.command()
@@ -291,7 +285,7 @@ def stat(
         return
     text = f"- commit: {wiki_sha}" if wiki_sha else "No data."
     if stale_info is not None:
-        text += "\n\n" + _format_stale(stale_info)
+        text += "\n\n" + format_stale(stale_info)
     typer.echo(format_result("CodeWiki", resolved, "stat", text))
 
 

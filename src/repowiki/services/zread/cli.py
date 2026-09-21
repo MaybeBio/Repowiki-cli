@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 import re
 import sys
 from datetime import datetime
-from pathlib import Path
 from typing import NoReturn, Optional
 
 import typer
@@ -21,6 +19,8 @@ from repowiki.services.zread.client import (
 )
 from repowiki.services.zread.flight import Page
 from repowiki.shared.async_ import run_async
+from repowiki.shared.export import export_pages_named, fetch_pages
+from repowiki.shared.github import format_stale
 from repowiki.shared.model import Answer
 from repowiki.shared.output import (
     format_answer,
@@ -32,7 +32,12 @@ from repowiki.shared.output import (
     status,
 )
 from repowiki.shared.repo import normalize_repo
-from repowiki.shared.save import append_entry
+from repowiki.shared.save import (
+    AutoSaveCommand,
+    SAVE_AUTO,
+    append_entry,
+    default_save_path,
+)
 
 zread_app = typer.Typer(add_completion=False, help="Query zread.ai documentation.")
 
@@ -335,20 +340,6 @@ def _format_stat(data: dict, human: bool = False) -> str:
     return "\n".join(lines)
 
 
-def _format_stale(info: dict) -> str:
-    zread_sha = info.get("zread_sha") or ""
-    github_sha = info.get("github_sha") or ""
-    when = info.get("github_when") or ""
-    if not github_sha:
-        return "Could not fetch GitHub HEAD."
-    if not zread_sha:
-        return "No last_commit.hash in zread data."
-    if zread_sha == github_sha:
-        return f"最新 (up-to-date): {github_sha}"
-    suffix = f" ({when})" if when else ""
-    return f"过期 (stale): zread {zread_sha[:7]} != github {github_sha[:7]}{suffix}"
-
-
 def _format_search(results: list) -> str:
     if not results:
         return "No results."
@@ -375,30 +366,14 @@ def _format_search(results: list) -> str:
 
 async def _export(client: ZreadClient, repo: str, out_dir: str, concurrency: int) -> int:
     _, pages = await client.outline(repo)
-    sem = asyncio.Semaphore(concurrency)
 
-    async def one(p: Page):
-        async with sem:
-            md = await client.page(repo, p.slug)
-            return p, md
+    async def fetch_page(p: Page) -> tuple[str, str, str]:
+        md = await client.page(repo, p.slug)
+        return f"{p.slug}.md", p.topic, md
 
-    results = await asyncio.gather(*(one(p) for p in pages))
-    out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    entries = []
-    for p, md in results:
-        fname = f"{p.slug}.md"
-        (out / fname).write_text(md, encoding="utf-8")
-        entries.append((p, fname))
-    index = ["# " + repo, ""]
-    for p, fname in entries:
-        index.append(f"- [{p.topic}]({fname})")
-    index_text = "\n".join(index) + "\n"
-    (out / "llms.txt").write_text(index_text, encoding="utf-8")
-    (out / "README.md").write_text(index_text, encoding="utf-8")
-    full = "\n\n".join(f"# {p.topic}\n\n{md}" for p, md in results)
-    (out / "llms-full.txt").write_text(full + "\n", encoding="utf-8")
-    return len(entries)
+    entries = await fetch_pages(pages, fetch_page, concurrency)
+    full = "\n\n".join(f"# {title}\n\n{md}" for _fname, title, md in entries)
+    return export_pages_named(out_dir, repo, entries, full)
 
 
 @zread_app.command()
@@ -474,7 +449,7 @@ def contents(
     _emit(resolved, "contents", text, rich, json, **fields)
 
 
-@zread_app.command()
+@zread_app.command(cls=AutoSaveCommand)
 def ask(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     question: Optional[str] = typer.Argument(None, help="Question (omit for interactive mode)"),
@@ -482,7 +457,10 @@ def ask(
     lang: Optional[str] = typer.Option(None, "--lang", help="Language (zh|en)"),
     rich: bool = typer.Option(False, "--rich", help="Render Markdown with rich"),
     json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
-    save: Optional[str] = typer.Option(None, "--save", help="Save the answer to a Markdown file."),
+    save: Optional[str] = typer.Option(
+        None, "--save", help="Save answers to a Markdown file. Bare --save auto-names "
+        "the file; --save PATH writes/appends to PATH."
+    ),
     stream: bool = typer.Option(False, "--stream", help="Stream answer chunks as they arrive"),
     show_reasoning: bool = typer.Option(
         False, "--show-reasoning", help="Also show the model's reasoning trace",
@@ -490,6 +468,7 @@ def ask(
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo, json)
+    save_path = default_save_path(resolved) if save == SAVE_AUTO else save
     if question is not None:
         if not question.strip():
             _fail("Question must not be empty.", "invalid_input", json)
@@ -514,7 +493,7 @@ def ask(
                 typer.echo(format_json(resolved, "ask", question=question, answer=answer.body))
             else:
                 _emit(resolved, "ask", format_answer(answer), rich, False)
-            _append_save(save, resolved, question, answer.body)
+            _append_save(save_path, resolved, question, answer.body)
             return
         client = _make_client(lang, model)
         streamed = False
@@ -543,7 +522,7 @@ def ask(
         else:
             _print_reasoning("".join(reasoning_parts))
             _emit(resolved, "ask", format_answer(answer), rich, False)
-        _append_save(save, resolved, question, answer.body)
+        _append_save(save_path, resolved, question, answer.body)
         return
     if json:
         typer.secho("Warning: --json has no effect in interactive mode.", fg=typer.colors.YELLOW, err=True)
@@ -552,7 +531,7 @@ def ask(
     typer.echo("Ask a question, or /exit to quit.  (/new starts a new thread)")
     typer.echo()
     try:
-        run_async(_repl(resolved, rich, save, model, lang, stream, show_reasoning))
+        run_async(_repl(resolved, rich, save_path, model, lang, stream, show_reasoning))
     except Exception as exc:
         _handle_exception(exc, False)
 
@@ -622,7 +601,7 @@ def stat(
             with status("Checking GitHub HEAD..."):
                 head = run_async(client.github_head(resolved))
             stale_info = {
-                "zread_sha": zread_sha or "",
+                "wiki_sha": zread_sha or "",
                 "github_sha": head.get("sha") or "",
                 "github_when": head.get("when") or "",
             }
@@ -636,7 +615,7 @@ def stat(
     else:
         text = _format_stat(data, human)
         if stale_info is not None:
-            text += "\n\n" + _format_stale(stale_info)
+            text += "\n\n" + format_stale(stale_info)
         typer.echo(format_result("Zread", resolved, "stat", text))
 
 

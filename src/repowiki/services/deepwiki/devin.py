@@ -17,6 +17,7 @@ import websockets
 from websockets.exceptions import ConnectionClosedOK, WebSocketException
 
 from repowiki.services.deepwiki.client import ConnectionError, ToolError
+from repowiki.shared.github import GithubError, fetch_github_head, split_repo
 from repowiki.shared.model import Answer, Reference, SourceFile
 
 
@@ -323,26 +324,14 @@ class DevinClient:
         ``id`` in the index (e.g. ``…/IDPFold2/5315b279``) ends in a short
         commit sha, so compare it against GitHub HEAD to detect a stale wiki.
         """
-        owner, name = repo.split("/", 1)
+        owner, name = split_repo(repo)
         try:
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                resp = await client.get(
-                    f"https://api.github.com/repos/{owner}/{name}/commits/HEAD"
-                )
-                resp.raise_for_status()
-                try:
-                    commit = resp.json()
-                except json.JSONDecodeError as exc:
-                    raise ToolError("invalid JSON response from GitHub") from exc
+                return await fetch_github_head(client, owner, name)
         except httpx.TransportError as exc:
             raise ConnectionError(_connection_message("GitHub", exc)) from exc
-        except httpx.HTTPStatusError as exc:
-            raise ToolError(f"GitHub API returned HTTP {exc.response.status_code}") from exc
-        if not isinstance(commit, dict):
-            raise ToolError("unexpected GitHub response")
-        committer = commit.get("commit", {}).get("committer") or {}
-        when = committer.get("date") if isinstance(committer, dict) else None
-        return {"sha": commit.get("sha") or "", "when": when}
+        except GithubError as exc:
+            raise ToolError(str(exc)) from exc
 
     async def get_query(self, query_id: str) -> Answer:
         data = await self._get_json(f"/ada/query/{query_id}")

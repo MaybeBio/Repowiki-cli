@@ -114,9 +114,8 @@ DeepWiki 的 `ask` 在逆向后端提供数据时，还会附带 `summary`、`re
 
 `--save` 把答案写入 Markdown 文件：
 
-- `--save PATH` 写入（并追加到）指定路径，自动创建父目录。CodeWiki 与 Zread 的
-  `ask` 要求提供路径。
-- DeepWiki 的 `ask` 还支持裸 `--save`，自动命名为当前目录下的
+- `--save PATH` 写入（并追加到）指定路径，自动创建父目录。
+- 裸 `--save`（三个服务均支持）自动命名为当前目录下的
   `repowiki-<owner>-<repo>_<timestamp>.md`。
 - 交互模式下整个会话的所有回答追加到同一文件；单次回答在文件已存在时追加。
 - 可与 `--json` 组合：stdout 保持 JSON，同时把 Markdown 写入文件。
@@ -530,7 +529,7 @@ claude mcp add -s user -t http deepwiki https://mcp.deepwiki.com/mcp
 ```bash
 repowiki-cli codewiki structure REPO [--json]
 repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
-repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
+repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save [PATH]]
 repowiki-cli codewiki stat REPO [--stale] [--json]
 repowiki-cli codewiki cp REPO [OUTPUT_DIR]
 ```
@@ -561,7 +560,7 @@ repowiki-cli codewiki ask facebook/react "What is Fiber?"
 ### `codewiki ask`
 
 ```bash
-repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
+repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save [PATH]]
 ```
 
 带 `QUESTION` 则单次回答后退出；不带则进入交互式 REPL——每行一个问题，输入
@@ -570,8 +569,8 @@ repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
 
 - `--rich` — 用 `rich` 渲染答案的 Markdown。
 - `--json` — 输出 JSON 信封；交互模式下忽略。
-- `--save PATH` — 把答案保存为 Markdown 文件（见「保存」）。需要指定路径
-  （CodeWiki 的 `ask` 不支持裸 `--save` 自动命名）。
+- `--save [PATH]` — 把答案保存为 Markdown 文件（见「保存」）。裸 `--save`
+  会在当前目录自动命名。
 
 ### `codewiki stat`
 
@@ -587,11 +586,12 @@ repowiki-cli codewiki stat REPO [--stale] [--json]
   wiki sha 是完整 GitHub sha 的前缀。
 - `--json` — 输出 JSON 信封（设置 `--stale` 时附带 `stale`）。
 
-**实现：** 过期检测由 `CodeWikiClient.github_head()` 完成，它调用
+**实现：** 过期检测由共享的 `shared/github.py::fetch_github_head` 完成（经
+`CodeWikiClient.github_head()` 调用），它执行
 `GET https://api.github.com/repos/{owner}/{name}/commits/HEAD`（带
 `follow_redirects=True` 以应对改名仓库的 301），返回完整的 40 位 `sha` 与
-`commit.committer.date`。当 GitHub sha `startswith` wiki 的（可能为短）sha 时，
-wiki 即为最新。
+`commit.committer.date`；`shared/github.py::format_stale` 负责渲染结论。当
+GitHub sha `startswith` wiki 的（可能为短）sha 时，wiki 即为最新。
 
 ### `codewiki cp`
 
@@ -621,7 +621,7 @@ repowiki-cli codewiki cp REPO [OUTPUT_DIR]
 ```bash
 repowiki-cli zread structure REPO [--lang zh|en] [--json]
 repowiki-cli zread contents REPO [SLUG] [--file PATH] [--start N] [--end M] [--lang zh|en] [--rich] [--json]
-repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH] [--stream] [--show-reasoning]
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save [PATH]] [--stream] [--show-reasoning]
 repowiki-cli zread find QUERY [--limit N] [--lang zh|en] [--json]
 repowiki-cli zread stat REPO [--lang zh|en] [--human] [--stale] [--json]
 repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
@@ -668,7 +668,7 @@ repowiki-cli zread contents https://github.com/o/r/blob/main/src/a.py#L10-L20
 ### `zread ask`
 
 ```bash
-repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save PATH] [--stream] [--show-reasoning]
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save [PATH]] [--stream] [--show-reasoning]
 ```
 
 带 `QUESTION` 则单次回答后退出；不带则进入交互式 REPL——每行一个问题，输入
@@ -686,7 +686,8 @@ DevTools 控制台执行
 - `--lang zh|en` — 语言。
 - `--rich` — 用 `rich` 渲染答案的 Markdown。与 `--stream` 一起使用时无效（流式输出为纯文本）。
 - `--json` — 输出 JSON 信封；交互模式下忽略。与 `--stream` 一起使用时无效。
-- `--save PATH` — 把答案保存为 Markdown 文件（见「保存」）。
+- `--save [PATH]` — 把答案保存为 Markdown 文件（见「保存」）。裸 `--save`
+  会在当前目录自动命名。
 - `--stream` — 通过 SSE 把 `answer` 事件的分片逐字写到 stdout，流式输出纯文本答案。
 - `--show-reasoning` — 同时展示模型的思考过程（SSE 的 `reasoning_content` 字段，
   在回答之前流式下发）。`--stream` 模式下会先输出 `reasoning:` 块再输出

@@ -57,3 +57,63 @@ def test_is_cert_error_detects_ssl_verification():
     exc.__cause__ = cert
     assert _is_cert_error(exc)
     assert not _is_cert_error(httpx.ConnectError("connection refused"))
+
+
+async def _no_sleep(_delay: float) -> None:
+    return None
+
+
+def test_call_retries_on_transient(monkeypatch):
+    import repowiki.services.codewiki.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+    calls = {"n": 0}
+
+    inner = json.dumps([[[ "o/r", "sha" ], []]])
+    frame = ["wrb.fr", "VSX6ub", inner, None, None, None, "generic"]
+    body = ")]}'\n" + json.dumps([frame])
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, text=SAMPLE_HTML)
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(503)
+        return httpx.Response(200, text=body)
+
+    monkeypatch.setenv("CODEWIKI_CACHE_DIR", "/tmp/codewiki-test-cache-retry")
+    client = CodeWikiClient(transport=httpx.MockTransport(handler), retries=5)
+    wiki = run_async(client.read_wiki("o/r"))
+    assert wiki.repo_slug == "o/r"
+    assert calls["n"] == 3
+
+
+def test_call_honors_retry_after(monkeypatch):
+    import repowiki.services.codewiki.client as mod
+
+    sleeps = []
+
+    async def capture_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(mod.asyncio, "sleep", capture_sleep)
+    calls = {"n": 0}
+
+    inner = json.dumps([[[ "o/r", "sha" ], []]])
+    frame = ["wrb.fr", "VSX6ub", inner, None, None, None, "generic"]
+    body = ")]}'\n" + json.dumps([frame])
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, text=SAMPLE_HTML)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, headers={"Retry-After": "100"})
+        return httpx.Response(200, text=body)
+
+    monkeypatch.setenv("CODEWIKI_CACHE_DIR", "/tmp/codewiki-test-cache-retry-after")
+    client = CodeWikiClient(transport=httpx.MockTransport(handler), retries=5)
+    wiki = run_async(client.read_wiki("o/r"))
+    assert wiki.repo_slug == "o/r"
+    assert calls["n"] == 2
+    assert sleeps == [100.0]

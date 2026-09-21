@@ -213,3 +213,13 @@ def test_cp_default_output_dir(monkeypatch, tmp_path):
     result = runner.invoke(codewiki_app, ["cp", "owner/example"])
     assert result.exit_code == 0
     assert (tmp_path / "owner_example" / "llms.txt").exists()
+
+
+def test_ask_save_bare_auto_names(monkeypatch, tmp_path):
+    monkeypatch.setenv("REPOWIKI_CODEWIKI_MOCK", "the answer")
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(codewiki_app, ["ask", "owner/example", "q?", "--save"])
+    assert result.exit_code == 0
+    files = list(tmp_path.glob("repowiki-owner-example_*.md"))
+    assert len(files) == 1
+    assert "the answer" in files[0].read_text()

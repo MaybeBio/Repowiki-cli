@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import random
 import ssl
 
 import httpx
@@ -16,15 +15,14 @@ from repowiki.services.zread.flight import (
     rewrite_callouts,
     strip_frontmatter,
 )
+from repowiki.shared.github import GithubError, fetch_github_head, split_repo
+from repowiki.shared.retry import TRANSIENT_STATUS, backoff
 
 BASE = "https://zread.ai"
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
-_TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529}
-
-
 class ZreadError(Exception):
     """Base error for Zread."""
 
@@ -46,10 +44,6 @@ def _split(repo: str) -> tuple[str, str]:
     if not name:
         raise ValueError(f"invalid repo: {repo!r}")
     return owner, name
-
-
-def _backoff(attempt: int) -> float:
-    return min(2 ** attempt + random.uniform(0, 1.5), 30.0)
 
 
 def _is_cert_error(exc: BaseException) -> bool:
@@ -213,24 +207,24 @@ class ZreadClient:
                         )
                     if attempt >= self._retries or _is_cert_error(exc):
                         raise ZreadConnectionError(message) from exc
-                    await asyncio.sleep(_backoff(attempt))
+                    await asyncio.sleep(backoff(attempt))
                     continue
                 if resp.status_code == 429 and attempt < self._retries:
-                    wait = _backoff(attempt)
+                    wait = backoff(attempt)
                     try:
                         wait = max(wait, float(resp.headers.get("Retry-After", "")))
                     except ValueError:
                         pass
                     await asyncio.sleep(wait)
                     continue
-                if resp.status_code in _TRANSIENT_STATUS and attempt < self._retries:
-                    await asyncio.sleep(_backoff(attempt))
+                if resp.status_code in TRANSIENT_STATUS and attempt < self._retries:
+                    await asyncio.sleep(backoff(attempt))
                     continue
                 if resp.status_code in (403, 429, 503):
                     raise ZreadChallengeError(f"Zread returned HTTP {resp.status_code} (Cloudflare)")
                 if resp.status_code == 404:
                     raise ZreadNotFoundError(f"Zread returned HTTP 404 for {url}")
-                if resp.status_code in _TRANSIENT_STATUS:
+                if resp.status_code in TRANSIENT_STATUS:
                     raise ZreadConnectionError(
                         f"Zread returned HTTP {resp.status_code} after {self._retries} attempts"
                     )
@@ -318,20 +312,22 @@ class ZreadClient:
 
     async def github_head(self, repo: str) -> dict:
         """Return the GitHub HEAD commit for a repo: ``{"sha": ..., "when": ...}``."""
-        owner, name = _split(repo)
-        resp = await self._request(
-            "GET", f"https://api.github.com/repos/{owner}/{name}/commits/HEAD",
-            timeout=30.0, headers=self._headers(),
-        )
+        owner, name = split_repo(repo)
         try:
-            commit = resp.json()
-        except json.JSONDecodeError as exc:
-            raise ZreadError("invalid JSON response from GitHub") from exc
-        if not isinstance(commit, dict):
-            raise ZreadError("unexpected GitHub response")
-        committer = commit.get("commit", {}).get("committer") or {}
-        when = committer.get("date") if isinstance(committer, dict) else None
-        return {"sha": commit.get("sha") or "", "when": when}
+            async with httpx.AsyncClient(
+                timeout=30.0, follow_redirects=True, transport=self._transport,
+            ) as client:
+                return await fetch_github_head(client, owner, name)
+        except httpx.TransportError as exc:
+            message = f"Failed to connect to GitHub: {exc}"
+            if _is_cert_error(exc):
+                message += (
+                    " (TLS certificate verification failed; set SSL_CERT_FILE "
+                    "to your CA bundle to trust a proxy/mirror)"
+                )
+            raise ZreadConnectionError(message) from exc
+        except GithubError as exc:
+            raise ZreadError(str(exc)) from exc
 
     async def read_file(
         self, repo_id: str, path: str,

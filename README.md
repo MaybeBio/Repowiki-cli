@@ -122,8 +122,8 @@ fields only. Errors go to stderr as `{"error": ..., "kind": ...}`.
 `--save` writes answers to a Markdown file:
 
 - `--save PATH` writes to (and appends to) the given path, creating parent
-  directories. CodeWiki and Zread `ask` take a required path.
-- DeepWiki `ask` also accepts a bare `--save`, which auto-names the file
+  directories.
+- A bare `--save` (all three services) auto-names the file
   `repowiki-<owner>-<repo>_<timestamp>.md` in the current directory.
 - In interactive mode all answers in the session append to one file; single-shot
   answers append when the file already exists.
@@ -567,7 +567,7 @@ requires **no auth** — it does not support private repos.
 ```bash
 repowiki-cli codewiki structure REPO [--json]
 repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
-repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
+repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save [PATH]]
 repowiki-cli codewiki stat REPO [--stale] [--json]
 repowiki-cli codewiki cp REPO [OUTPUT_DIR]
 ```
@@ -599,7 +599,7 @@ Prints the full CodeWiki documentation for a repository, which can be large.
 ### `codewiki ask`
 
 ```bash
-repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save PATH]
+repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save [PATH]]
 ```
 
 With `QUESTION`, `ask` answers once and exits. Without it, `ask` starts an
@@ -609,8 +609,8 @@ continuation).
 
 - `--rich` — render the answer's Markdown with `rich`.
 - `--json` — emit a JSON envelope. Ignored in interactive mode.
-- `--save PATH` — save the answer to a Markdown file (see *Saving*). A path is
-  required (CodeWiki's `ask` does not auto-name on a bare `--save`).
+- `--save [PATH]` — save the answer to a Markdown file (see *Saving*). A bare
+  `--save` auto-names the file in the current directory.
 
 ### `codewiki stat`
 
@@ -627,11 +627,13 @@ the wiki payload header by `codewiki/wiki.py::parse`).
   GitHub sha when the wiki is current.
 - `--json` — emit a JSON envelope (with `stale` when `--stale` is set).
 
-**Implementation:** staleness is checked by `CodeWikiClient.github_head()`, which
-calls `GET https://api.github.com/repos/{owner}/{name}/commits/HEAD` (with
+**Implementation:** staleness is checked by the shared
+`shared/github.py::fetch_github_head` (called from `CodeWikiClient.github_head()`),
+which does `GET https://api.github.com/repos/{owner}/{name}/commits/HEAD` (with
 `follow_redirects=True` to survive renamed-repo 301s) and returns the full
-40-char `sha` plus `commit.committer.date`. A wiki is current when the GitHub
-sha `startswith` the wiki's (possibly short) sha.
+40-char `sha` plus `commit.committer.date`; `shared/github.py::format_stale`
+renders the verdict. A wiki is current when the GitHub sha `startswith` the
+wiki's (possibly short) sha.
 
 ### `codewiki cp`
 
@@ -666,7 +668,7 @@ read commands need **no auth**. The commands `ask` and `submit` require a token
 ```bash
 repowiki-cli zread structure REPO [--lang zh|en] [--json]
 repowiki-cli zread contents REPO [SLUG] [--file PATH] [--start N] [--end M] [--lang zh|en] [--rich] [--json]
-repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save PATH] [--stream] [--show-reasoning]
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--lang zh|en] [--rich] [--json] [--save [PATH]] [--stream] [--show-reasoning]
 repowiki-cli zread find QUERY [--limit N] [--lang zh|en] [--json]
 repowiki-cli zread stat REPO [--lang zh|en] [--human] [--stale] [--json]
 repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
@@ -717,7 +719,7 @@ repowiki-cli zread contents https://github.com/o/r/blob/main/src/a.py#L10-L20
 ### `zread ask`
 
 ```bash
-repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save PATH] [--stream] [--show-reasoning]
+repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save [PATH]] [--stream] [--show-reasoning]
 ```
 
 With `QUESTION`, `ask` answers once and exits. Without it, `ask` starts an
@@ -740,7 +742,8 @@ the token. Set it as the `ZREAD_TOKEN` environment variable.
   `--stream` (the answer streams as plain text).
 - `--json` — emit a JSON envelope. Ignored in interactive mode. Has no effect
   with `--stream`.
-- `--save PATH` — save the answer to a Markdown file (see *Saving*).
+- `--save [PATH]` — save the answer to a Markdown file (see *Saving*). A bare
+  `--save` auto-names the file in the current directory.
 - `--stream` — stream the answer's `answer` SSE chunks to stdout as they arrive
   (plain text), instead of buffering until the full answer is ready.
 - `--show-reasoning` — also show the model's reasoning trace (the

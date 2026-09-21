@@ -12,7 +12,6 @@ from typing import NoReturn, Optional
 from uuid import uuid4
 
 import typer
-from typer.core import TyperCommand
 
 from repowiki.services.deepwiki.client import (
     ConnectionError,
@@ -24,6 +23,7 @@ from repowiki.shared.async_ import run_async
 from repowiki.services.deepwiki.codemap import codemap_to_mermaid
 from repowiki.services.deepwiki.devin import DevinClient
 from repowiki.shared.export import export_pages
+from repowiki.shared.github import format_stale
 from repowiki.shared.model import Answer
 from repowiki.shared.output import (
     filter_page,
@@ -42,41 +42,14 @@ from repowiki.shared.output import (
     status,
 )
 from repowiki.shared.repo import normalize_repo
-from repowiki.shared.save import append_entry, default_save_path
+from repowiki.shared.save import (
+    AutoSaveCommand,
+    SAVE_AUTO,
+    append_entry,
+    default_save_path,
+)
 
 deepwiki_app = typer.Typer(add_completion=False, help="Query DeepWiki documentation.")
-
-# Sentinel injected into argv for a bare ``--save`` (no value). ``save`` then
-# resolves to an auto-generated filename instead of an explicit path.
-_SAVE_AUTO = "\x00auto\x00"
-
-
-def _normalize_save(args: list[str]) -> list[str]:
-    """Turn a bare ``--save`` into ``--save <sentinel>`` so typer accepts it.
-
-    Typer has no support for Click's optional-value flags (``flag_value``), so a
-    value-taking ``--save`` normally rejects a bare ``--save``. Rewriting the
-    bare form here lets a single option cover both ``--save`` and
-    ``--save PATH``.
-    """
-    out: list[str] = []
-    i = 0
-    while i < len(args):
-        tok = args[i]
-        out.append(tok)
-        if tok == "--save":
-            if i + 1 >= len(args) or args[i + 1].startswith("-"):
-                out.append(_SAVE_AUTO)
-            else:
-                out.append(args[i + 1])
-                i += 1
-        i += 1
-    return out
-
-
-class _AskCommand(TyperCommand):
-    def parse_args(self, ctx, args):
-        return super().parse_args(ctx, _normalize_save(args))
 
 
 def _error_message(exc: Exception) -> str:
@@ -480,7 +453,7 @@ def contents(
     _emit(resolved, "contents", text, rich, json, **fields)
 
 
-@deepwiki_app.command(cls=_AskCommand)
+@deepwiki_app.command(cls=AutoSaveCommand)
 def ask(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
     question: Optional[str] = typer.Argument(None, help="Question (omit for interactive mode)"),
@@ -523,7 +496,7 @@ def ask(
 ) -> None:
     """Ask a question about a repository (single-shot or interactive)."""
     resolved = _resolve_repo(repo, json)
-    save_path = default_save_path(resolved) if save == _SAVE_AUTO else save
+    save_path = default_save_path(resolved) if save == SAVE_AUTO else save
 
     if mode is not None and mode not in ("fast", "deep", "codemap"):
         _fail(f"Invalid --mode: {mode!r} (expected fast, deep, or codemap).", "invalid_input", json)
@@ -773,20 +746,6 @@ def _format_stat(entry: dict, human: bool) -> str:
     return "\n".join(lines) or "No data."
 
 
-def _format_stale(info: dict) -> str:
-    wiki_sha = info.get("wiki_sha") or ""
-    github_sha = info.get("github_sha") or ""
-    when = info.get("github_when") or ""
-    if not github_sha:
-        return "Could not fetch GitHub HEAD."
-    if not wiki_sha:
-        return "No commit sha in the index entry."
-    if github_sha.startswith(wiki_sha):
-        return f"最新 (up-to-date): {wiki_sha}"
-    suffix = f" ({when})" if when else ""
-    return f"过期 (stale): wiki {wiki_sha[:7]} != github {github_sha[:7]}{suffix}"
-
-
 @deepwiki_app.command()
 def stat(
     repo: str = typer.Argument(..., help="Repository (owner/repo or GitHub URL)"),
@@ -823,7 +782,7 @@ def stat(
         return
     text = _format_stat(entry, human)
     if stale_info is not None:
-        text += "\n\n" + _format_stale(stale_info)
+        text += "\n\n" + format_stale(stale_info)
     typer.echo(format_result("DeepWiki", resolved, "stat", text))
 
 

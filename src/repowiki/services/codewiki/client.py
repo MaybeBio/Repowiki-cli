@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -14,6 +15,8 @@ import httpx
 
 from repowiki.services.codewiki import boq
 from repowiki.services.codewiki.wiki import Wiki, parse as parse_wiki
+from repowiki.shared.github import GithubError, fetch_github_head, split_repo
+from repowiki.shared.retry import TRANSIENT_STATUS, backoff
 
 SITE = "https://codewiki.google"
 ENDPOINT = f"{SITE}/_/BoqAngularSdlcAgentsUi/data/batchexecute"
@@ -113,8 +116,13 @@ async def _load_bootstrap(http: httpx.AsyncClient) -> _Bootstrap:
 class CodeWikiClient:
     """Stateless client; the bootstrap pair is cached on disk (6h TTL)."""
 
-    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        transport: httpx.AsyncBaseTransport | None = None,
+        retries: int = 5,
+    ) -> None:
         self._transport = transport
+        self._retries = retries
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -146,14 +154,10 @@ class CodeWikiClient:
         Used to compare the wiki's ``commit_sha`` against the live branch to
         detect a stale wiki.
         """
-        owner, name = repo.split("/", 1)
+        owner, name = split_repo(repo)
         try:
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                resp = await client.get(
-                    f"https://api.github.com/repos/{owner}/{name}/commits/HEAD"
-                )
-                resp.raise_for_status()
-                commit = resp.json()
+                return await fetch_github_head(client, owner, name)
         except httpx.TransportError as exc:
             message = f"Failed to connect to GitHub: {exc}"
             if _is_cert_error(exc):
@@ -162,15 +166,8 @@ class CodeWikiClient:
                     "your CA bundle to trust a proxy/mirror)"
                 )
             raise CodeWikiConnectionError(message) from exc
-        except httpx.HTTPStatusError as exc:
-            raise CodeWikiError(
-                f"GitHub API returned HTTP {exc.response.status_code}"
-            ) from exc
-        if not isinstance(commit, dict):
-            raise CodeWikiError("unexpected GitHub response")
-        committer = commit.get("commit", {}).get("committer") or {}
-        when = committer.get("date") if isinstance(committer, dict) else None
-        return {"sha": commit.get("sha") or "", "when": when}
+        except GithubError as exc:
+            raise CodeWikiError(str(exc)) from exc
 
     async def _call(
         self,
@@ -196,29 +193,49 @@ class CodeWikiClient:
             "X-Same-Domain": "1",
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
         }
-        try:
-            resp = await http.post(
-                ENDPOINT,
-                params=params,
-                headers=headers,
-                content=boq.encode_request(rpc_id, inner_json),
-            )
-        except httpx.TransportError as exc:
-            message = f"Failed to connect to CodeWiki: {exc}"
-            if _is_cert_error(exc):
-                message += (
-                    " (TLS certificate verification failed; set SSL_CERT_FILE to "
-                    "your CA bundle to trust a proxy/mirror)"
+        content = boq.encode_request(rpc_id, inner_json)
+        for attempt in range(1, self._retries + 1):
+            try:
+                resp = await http.post(
+                    ENDPOINT,
+                    params=params,
+                    headers=headers,
+                    content=content,
                 )
-            raise CodeWikiConnectionError(message) from exc
-        if resp.status_code != 200:
-            raise CodeWikiError(
-                f"batchexecute returned HTTP {resp.status_code}: {resp.text[:200]}"
-            )
-        try:
-            return boq.decode_response(resp.text, rpc_id)
-        except ValueError as exc:
-            raise CodeWikiError(str(exc)) from exc
+            except httpx.TransportError as exc:
+                message = f"Failed to connect to CodeWiki: {exc}"
+                if _is_cert_error(exc):
+                    message += (
+                        " (TLS certificate verification failed; set SSL_CERT_FILE to "
+                        "your CA bundle to trust a proxy/mirror)"
+                    )
+                    raise CodeWikiConnectionError(message) from exc
+                if attempt >= self._retries:
+                    raise CodeWikiConnectionError(message) from exc
+                await asyncio.sleep(backoff(attempt))
+                continue
+            if resp.status_code == 429 and attempt < self._retries:
+                wait = backoff(attempt)
+                try:
+                    wait = max(wait, float(resp.headers.get("Retry-After", "")))
+                except ValueError:
+                    pass
+                await asyncio.sleep(wait)
+                continue
+            if resp.status_code in TRANSIENT_STATUS and attempt < self._retries:
+                await asyncio.sleep(backoff(attempt))
+                continue
+            if resp.status_code != 200:
+                raise CodeWikiError(
+                    f"batchexecute returned HTTP {resp.status_code}: {resp.text[:200]}"
+                )
+            try:
+                return boq.decode_response(resp.text, rpc_id)
+            except ValueError as exc:
+                raise CodeWikiError(str(exc)) from exc
+        raise CodeWikiConnectionError(
+            f"Failed to connect to CodeWiki after {self._retries} attempts"
+        )
 
 
 def _github_url(repo: str) -> str:
