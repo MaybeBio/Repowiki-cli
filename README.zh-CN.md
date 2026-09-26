@@ -1,19 +1,31 @@
 <div align="center">
 
-<img src="./figs/banner.svg" alt="repowiki-cli" width="420" />
-
 # Repowiki-cli
 
 **从终端查询任意公开 GitHub 仓库的 AI 生成文档。**
 
+<img src="./figs/banner.svg" alt="repowiki-cli" width="420" />
+
 一个二进制 · 一套命令界面 · 三个 wiki 服务：**DeepWiki** · **Google Code Wiki** · **zread.ai**
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0) 
+[![Sources](https://img.shields.io/badge/Sources-Deepwiki%20%2F%20Google%20code%20wiki%20%2F%20Zread-f59e0b)](#-这是什么)
 [![PyPI](https://img.shields.io/pypi/v/pyrepowiki-cli.svg?logo=pypi&logoColor=white)](https://pypi.org/project/pyrepowiki-cli/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://pypi.org/project/pyrepowiki-cli/)
 [![Downloads](https://static.pepy.tech/badge/pyrepowiki-cli)](https://pepy.tech/project/pyrepowiki-cli)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/MaybeBio/Repowiki-cli/pulls)
 
-[English](README.md) · [中文](README.zh-CN.md) · [安装](#-安装) · [快速上手](#-快速上手)
+
+<p>
+  文档阅读👉
+  <a href="README.md">English</a> |
+  <a href="README.zh-CN.md">中文</a> 
+</p>
+
+<p>
+    <a href="#-安装">安装</a> |
+  <a href="#-快速上手">快速上手</a> 
+</p>
 
 </div>
 
@@ -223,6 +235,8 @@ DeepWiki 的 `ask` 在逆向后端提供数据时，还会附带 `summary`、`re
 
 [DeepWiki](https://deepwiki.com) 是首要服务，挂在 `deepwiki` 命名空间下。它读取
 **公开仓库**、**无需鉴权**。
+
+<img src="docs/demo/deepwiki.gif" alt="repowiki-cli deepwiki 演示：打印 Starlette 的文档目录，然后提问" width="880" />
 
 ### 📋 `deepwiki structure`
 
@@ -597,6 +611,8 @@ claude mcp add -s user -t http deepwiki https://mcp.deepwiki.com/mcp
 [Google Code Wiki](https://codewiki.google) 是第二个 wiki 服务，挂在 `codewiki`
 命名空间下。CodeWiki **只读取公开仓库**、**无需鉴权**，不支持私有仓库。
 
+<img src="docs/demo/codewiki.gif" alt="repowiki-cli codewiki 演示：打印 Flask 的文档目录，然后提问" width="880" />
+
 ```bash
 repowiki-cli codewiki structure REPO [--json]
 repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
@@ -682,6 +698,8 @@ repowiki-cli codewiki cp REPO [OUTPUT_DIR]
 [zread.ai](https://zread.ai) 是第三个 wiki 服务，挂在 `zread` 命名空间下。Zread
 提供预先生成的文档，**只读取公开仓库**，所有读取命令都**无需鉴权**；`ask` 和
 `submit` 这两个命令需要一个 token（见下文）。
+
+<img src="docs/demo/zread.gif" alt="repowiki-cli zread 演示：搜索仓库，然后展示元信息与新鲜度检查" width="880" />
 
 > **实现说明**：`structure`/`contents` 通过 zread 的 JSON REST API（`GET
 > /api/v1/wiki/{id}` 与 `/api/v1/wiki/{id}/page/{slug}`）获取目录与页面

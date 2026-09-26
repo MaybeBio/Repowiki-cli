@@ -6,8 +6,7 @@ dist/
 build/
 .pytest_cache/
 refers/
-docs/
+/docs/superpowers
 CLAUDE.md 
 .superpowers/
 .claude
-rich-cli/

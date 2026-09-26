@@ -1,13 +1,15 @@
 <div align="center">
 
-<img src="./figs/banner.svg" alt="repowiki-cli" width="420" />
-
 # Repowiki-cli
 
 **Query AI-generated documentation for any public GitHub repository — straight from your terminal.**
 
+<img src="./figs/banner.svg" alt="repowiki-cli" width="420" />
+
 One binary · one command surface · three wiki services: **DeepWiki** · **Google Code Wiki** · **zread.ai**
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0) 
+[![Sources](https://img.shields.io/badge/Sources-Deepwiki%20%2F%20Google%20code%20wiki%20%2F%20Zread-f59e0b)](#-what-it-is)
 [![PyPI](https://img.shields.io/pypi/v/pyrepowiki-cli.svg?logo=pypi&logoColor=white)](https://pypi.org/project/pyrepowiki-cli/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://pypi.org/project/pyrepowiki-cli/)
 [![Downloads](https://static.pepy.tech/badge/pyrepowiki-cli)](https://pepy.tech/project/pyrepowiki-cli)
@@ -232,6 +234,8 @@ fields only. Errors go to stderr as `{"error": ..., "kind": ...}`.
 
 [DeepWiki](https://deepwiki.com) is the primary service, exposed under the
 `deepwiki` namespace. It reads **public repositories** with **no auth**.
+
+<img src="docs/demo/deepwiki.gif" alt="repowiki-cli deepwiki demo: printing the Starlette table of contents, then asking a question" width="880" />
 
 ### 📋 `deepwiki structure`
 
@@ -631,6 +635,8 @@ API key. The full documentation index lives at
 under the `codewiki` namespace. CodeWiki reads **public repositories only** and
 requires **no auth** — it does not support private repos.
 
+<img src="docs/demo/codewiki.gif" alt="repowiki-cli codewiki demo: printing the Flask table of contents, then asking a question" width="880" />
+
 ```bash
 repowiki-cli codewiki structure REPO [--json]
 repowiki-cli codewiki contents REPO [--page TITLE] [--rich] [--json]
@@ -723,6 +729,8 @@ helper (see `deepwiki cp`).
 namespace. Zread serves pre-generated docs for **public repositories**, and all
 read commands need **no auth**. The commands `ask` and `submit` require a token
 (see below).
+
+<img src="docs/demo/zread.gif" alt="repowiki-cli zread demo: searching for repositories, then showing metadata with a staleness check" width="880" />
 
 > **Implementation note:** `structure`/`contents` fetch the wiki outline and page
 > Markdown from zread's JSON REST API (`GET /api/v1/wiki/{id}` and
