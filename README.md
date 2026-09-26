@@ -35,8 +35,29 @@ conversation threading, and index-management endpoints that MCP does not.
 
 ## Install
 
+It is a standard Python package. The distribution is published on PyPI as
+**`pyrepowiki-cli`**, and it installs a console command named **`repowiki-cli`** —
+the two names differ, so always install by the distribution name `pyrepowiki-cli`.
+
+Run once without installing (needs [uv](https://docs.astral.sh/uv/) or
+[pipx](https://pipx.pypa.io/)):
+
 ```bash
-uvx repowiki-cli --help
+uvx --from pyrepowiki-cli repowiki-cli --help
+pipx run --spec pyrepowiki-cli repowiki-cli --help
+```
+
+Install as an isolated global CLI (recommended):
+
+```bash
+pipx install pyrepowiki-cli        # or: uv tool install pyrepowiki-cli
+```
+
+Install into the current Python environment:
+
+```bash
+pip install pyrepowiki-cli
+repowiki-cli --help
 ```
 
 From source:
@@ -543,21 +564,6 @@ Private repositories are out of scope for `repowiki-cli`; use the
 API key. The full documentation index lives at
 <https://docs.devin.ai/llms.txt>.
 
-### DeepWiki related tools
-
-These are reference/alternative CLIs for the same space — worth consulting
-before re-implementing anything:
-
-- [Zread CLI](https://github.com/ZreadAI/zread_cli) — generates wiki docs
-  locally from your repo via an LLM (config `~/.zread/config.yaml`).
-- [readmeX CLI](https://github.com/aibox22/readmeX) — official CLI.
-- [deepwiki-open](https://github.com/AsyncFuncAI/deepwiki-open) — open-source
-  DeepWiki CLI.
-
-If the goal is *generating* a wiki from your own API rather than querying the
-public DeepWiki index, the official CLIs above already solve it — don't
-reinvent the wheel.
-
 ## CodeWiki
 
 [Google Code Wiki](https://codewiki.google) is a second wiki service, exposed
@@ -874,3 +880,18 @@ repowiki-cli zread refresh REPO [--json]
 uv sync
 uv run pytest
 ```
+
+## Wiki related tools
+
+These are reference/alternative CLIs for the same space — worth consulting
+before re-implementing anything:
+
+- [Zread CLI](https://github.com/ZreadAI/zread_cli) — generates wiki docs
+  locally from your repo via an LLM (config `~/.zread/config.yaml`).
+- [readmeX CLI](https://github.com/aibox22/readmeX) — official CLI.
+- [deepwiki-open](https://github.com/AsyncFuncAI/deepwiki-open) — open-source
+  DeepWiki CLI.
+
+If the goal is *generating* a wiki from your own API rather than querying the
+public Wiki index, the official CLIs above already solve it — don't
+reinvent the wheel.

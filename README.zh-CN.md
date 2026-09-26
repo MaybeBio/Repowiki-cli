@@ -29,8 +29,27 @@ MCP 后端是 DeepWiki 官方文档化的服务，公开仓库免费、无需鉴
 
 ## 安装
 
+这是一个标准的 Python 包。它在 PyPI 上的**发行名（distribution）是 `pyrepowiki-cli`**，
+安装后提供的**命令名是 `repowiki-cli`** —— 两者不同，所以请始终用发行名 `pyrepowiki-cli` 安装。
+
+免安装直接运行（需要 [uv](https://docs.astral.sh/uv/) 或 [pipx](https://pipx.pypa.io/)）：
+
 ```bash
-uvx repowiki-cli --help
+uvx --from pyrepowiki-cli repowiki-cli --help
+pipx run --spec pyrepowiki-cli repowiki-cli --help
+```
+
+装成独立的全局 CLI（推荐）：
+
+```bash
+pipx install pyrepowiki-cli        # 或：uv tool install pyrepowiki-cli
+```
+
+装进当前 Python 环境：
+
+```bash
+pip install pyrepowiki-cli
+repowiki-cli --help
 ```
 
 从源码：
@@ -509,17 +528,6 @@ claude mcp add -s user -t http deepwiki https://mcp.deepwiki.com/mcp
 [Devin MCP 服务](https://docs.devin.ai/work-with-devin/devin-mcp)。完整文档索引在
 <https://docs.devin.ai/llms.txt>。
 
-### DeepWiki 相关工具
-
-以下是同一领域的参考/替代 CLI，重造轮子前值得先看看：
-
-- [Zread CLI](https://github.com/ZreadAI/zread_cli) — 用 LLM 从你的仓库本地生成
-  wiki 文档（配置 `~/.zread/config.yaml`）。
-- [readmeX CLI](https://github.com/aibox22/readmeX) — 官方 CLI。
-- [deepwiki-open](https://github.com/AsyncFuncAI/deepwiki-open) — 开源的 DeepWiki CLI。
-
-如果目标是用自己的 API **生成** wiki，而非查询公开的 DeepWiki 索引，上述官方 CLI
-已经解决了这个问题——不必自己造轮子。
 
 ## CodeWiki
 
@@ -813,3 +821,16 @@ repowiki-cli zread refresh REPO [--json]
 uv sync
 uv run pytest
 ```
+
+
+## 一些Wiki 相关工具
+
+以下是同一领域的参考/替代 CLI，重造轮子前值得先看看：
+
+- [Zread CLI](https://github.com/ZreadAI/zread_cli) — 用 LLM 从你的仓库本地生成
+  wiki 文档（配置 `~/.zread/config.yaml`）。
+- [readmeX CLI](https://github.com/aibox22/readmeX) — 官方 CLI。
+- [deepwiki-open](https://github.com/AsyncFuncAI/deepwiki-open) — 开源的 DeepWiki CLI。
+
+如果目标是用自己的 API **生成** wiki，而非查询公开的 Wiki 索引，上述官方 CLI
+已经解决了这个问题——不必自己造轮子。
