@@ -1,11 +1,74 @@
-# repowiki-cli · 仓库 Wiki 查询工具
+<div align="center">
 
-从终端查询任意公开 GitHub 仓库的 [DeepWiki](https://deepwiki.com)、
-[Google Code Wiki](https://codewiki.google) 与 [zread.ai](https://zread.ai) 文档。
+<img src="./figs/banner.svg" alt="repowiki-cli" width="420" />
 
-> English docs: [README.md](README.md) · 英文文档见 [README.md](README.md)
+# Repowiki-cli
 
-## 这是什么
+**从终端查询任意公开 GitHub 仓库的 AI 生成文档。**
+
+一个二进制 · 一套命令界面 · 三个 wiki 服务：**DeepWiki** · **Google Code Wiki** · **zread.ai**
+
+[![PyPI](https://img.shields.io/pypi/v/pyrepowiki-cli.svg?logo=pypi&logoColor=white)](https://pypi.org/project/pyrepowiki-cli/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://pypi.org/project/pyrepowiki-cli/)
+[![Downloads](https://static.pepy.tech/badge/pyrepowiki-cli)](https://pepy.tech/project/pyrepowiki-cli)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/MaybeBio/Repowiki-cli/pulls)
+
+[English](README.md) · [中文](README.zh-CN.md) · [安装](#-安装) · [快速上手](#-快速上手)
+
+</div>
+
+> **如果这个项目对你有帮助，欢迎点亮一个 ⭐ Star。**
+
+## 📑 索引
+
+- [📑 索引](#-索引)
+- [📖 这是什么](#-这是什么)
+- [📦 安装](#-安装)
+- [🚀 快速上手](#-快速上手)
+- [🧭 命令总览](#-命令总览)
+- [🧱 仓库格式](#-仓库格式)
+- [🧾 JSON 输出](#-json-输出)
+- [💾 保存（`--save`）](#-保存--save)
+- [🔧 环境变量](#-环境变量)
+- [🧠 DeepWiki](#-deepwiki)
+  - [📋 `deepwiki structure`](#-deepwiki-structure)
+  - [📄 `deepwiki contents`](#-deepwiki-contents)
+  - [💬 `deepwiki ask`](#-deepwiki-ask)
+  - [📇 `deepwiki list`](#-deepwiki-list)
+  - [📊 `deepwiki status`](#-deepwiki-status)
+  - [🔥 `deepwiki warm`](#-deepwiki-warm)
+  - [📥 `deepwiki get`](#-deepwiki-get)
+  - [📈 `deepwiki stat`](#-deepwiki-stat)
+  - [📤 `deepwiki cp`](#-deepwiki-cp)
+  - [🧩 DeepWiki 设计](#-deepwiki-设计)
+  - [🔀 DeepWiki 后端详解](#-deepwiki-后端详解)
+  - [🚦 DeepWiki 错误处理与退出码](#-deepwiki-错误处理与退出码)
+  - [🌊 DeepWiki 流式、重试与引用](#-deepwiki-流式重试与引用)
+  - [🧜 DeepWiki Mermaid](#-deepwiki-mermaid)
+  - [🍳 DeepWiki 组合实践方案](#-deepwiki-组合实践方案)
+  - [🔌 DeepWiki MCP 服务](#-deepwiki-mcp-服务)
+- [🔷 CodeWiki](#-codewiki)
+  - [📋 `codewiki structure`](#-codewiki-structure)
+  - [📄 `codewiki contents`](#-codewiki-contents)
+  - [💬 `codewiki ask`](#-codewiki-ask)
+  - [📈 `codewiki stat`](#-codewiki-stat)
+  - [📤 `codewiki cp`](#-codewiki-cp)
+- [📚 Zread](#-zread)
+  - [📋 `zread structure`](#-zread-structure)
+  - [📄 `zread contents`](#-zread-contents)
+  - [💬 `zread ask`](#-zread-ask)
+  - [🔎 `zread find`](#-zread-find)
+  - [📈 `zread stat`](#-zread-stat)
+  - [🔍 `zread search`](#-zread-search)
+  - [🏆 `zread top`](#-zread-top)
+  - [🎲 `zread rand`](#-zread-rand)
+  - [📤 `zread cp`](#-zread-cp)
+  - [📮 `zread submit`](#-zread-submit)
+  - [🔄 `zread refresh`](#-zread-refresh)
+- [🔨 开发](#-开发)
+- [🧰 一些Wiki 相关工具](#-一些wiki-相关工具)
+
+## 📖 这是什么
 
 `repowiki-cli` 是一个基于 Python/Typer 的 CLI，能在终端里读取 AI 生成的仓库文档、
 并就代码提问。它在**同一套命令界面**下对接了**三个 wiki 服务**，每个服务一个命名空间：
@@ -27,7 +90,7 @@ MCP 后端是 DeepWiki 官方文档化的服务，公开仓库免费、无需鉴
 `api.devin.ai`（与 DeepWiki 网页版同源）——它**不是**公开文档 API，但提供了 MCP
 没有的能力：引擎选择（`fast`/`deep`/`codemap`）、流式输出、对话线程、索引管理端点。
 
-## 安装
+## 📦 安装
 
 这是一个标准的 Python 包。它在 PyPI 上的**发行名（distribution）是 `pyrepowiki-cli`**，
 安装后提供的**命令名是 `repowiki-cli`** —— 两者不同，所以请始终用发行名 `pyrepowiki-cli` 安装。
@@ -60,7 +123,7 @@ uv sync
 uv run repowiki-cli --help
 ```
 
-## 快速上手
+## 🚀 快速上手
 
 ```bash
 repowiki-cli deepwiki structure facebook/react          # 文档目录
@@ -70,7 +133,7 @@ repowiki-cli codewiki ask facebook/react "What is Fiber?"
 repowiki-cli zread contents vercel/next.js              # 概览页
 ```
 
-## 命令总览
+## 🧭 命令总览
 
 | 命令 | 用途 | 服务 |
 |------|------|------|
@@ -98,10 +161,10 @@ repowiki-cli zread contents vercel/next.js              # 概览页
 | `cp REPO [OUTPUT_DIR]` | 导出整个 wiki 为 Markdown + `llms.txt`/`README.md` | Zread |
 | `submit REPO` | 提交仓库进行索引（需要 token） | Zread |
 
-每个服务在下方各自独立成节：[DeepWiki](#deepwiki)、[CodeWiki](#codewiki)、
-[Zread](#zread)。
+每个服务在下方各自独立成节：[DeepWiki](#-deepwiki)、[CodeWiki](#-codewiki)、
+[Zread](#-zread)。
 
-## 仓库格式
+## 🧱 仓库格式
 
 `REPO` 接受以下任意形式：
 
@@ -112,7 +175,7 @@ repowiki-cli zread contents vercel/next.js              # 概览页
 
 统一归一化为 `owner/repo`。
 
-## JSON 输出
+## 🧾 JSON 输出
 
 主命令输出带 `repo` 与 `command` 的信封：
 
@@ -129,7 +192,7 @@ DeepWiki 的 `ask` 在逆向后端提供数据时，还会附带 `summary`、`re
 `sources`、`stats`、`query_id`。管理命令（`list`/`status`/`warm`/`get`/`stat`）
 省略 `repo`，仅含 `command` + 字段。错误以 `{"error": ..., "kind": ...}` 写到 stderr。
 
-## 保存（`--save`）
+## 💾 保存（`--save`）
 
 `--save` 把答案写入 Markdown 文件：
 
@@ -139,7 +202,7 @@ DeepWiki 的 `ask` 在逆向后端提供数据时，还会附带 `summary`、`re
 - 交互模式下整个会话的所有回答追加到同一文件；单次回答在文件已存在时追加。
 - 可与 `--json` 组合：stdout 保持 JSON，同时把 Markdown 写入文件。
 
-## 环境变量
+## 🔧 环境变量
 
 | 变量 | 用途 | 默认值 |
 |------|------|--------|
@@ -156,12 +219,12 @@ DeepWiki 的 `ask` 在逆向后端提供数据时，还会附带 `summary`、`re
 | `REPOWIKI_CODEWIKI_MOCK` | mock CodeWiki 结果（测试用） | — |
 | `REPOWIKI_ZREAD_MOCK` | mock Zread 结果（测试用） | — |
 
-## DeepWiki
+## 🧠 DeepWiki
 
 [DeepWiki](https://deepwiki.com) 是首要服务，挂在 `deepwiki` 命名空间下。它读取
 **公开仓库**、**无需鉴权**。
 
-### `deepwiki structure`
+### 📋 `deepwiki structure`
 
 ```bash
 repowiki-cli deepwiki structure REPO [--json]
@@ -169,7 +232,7 @@ repowiki-cli deepwiki structure REPO [--json]
 
 打印文档目录（MCP `read_wiki_structure`）。
 
-### `deepwiki contents`
+### 📄 `deepwiki contents`
 
 ```bash
 repowiki-cli deepwiki contents REPO [--page TITLE] [--rich] [--json]
@@ -183,7 +246,7 @@ repowiki-cli deepwiki contents REPO [--page TITLE] [--rich] [--json]
 - `--rich` — 用 `rich` 渲染 Markdown（带颜色和格式）。
 - `--json` — 输出 JSON 信封而非 Markdown。
 
-### `deepwiki ask`
+### 💬 `deepwiki ask`
 
 ```bash
 repowiki-cli deepwiki ask REPO [QUESTION] \
@@ -217,7 +280,7 @@ repowiki-cli deepwiki ask REPO [QUESTION] \
 - `--rich` — 用 `rich` 渲染答案。与 `--stream` 一起使用时无效。
 - `--json` — 输出 JSON 信封；交互模式下忽略。
 
-### `deepwiki list`
+### 📇 `deepwiki list`
 
 ```bash
 repowiki-cli deepwiki list SEARCH [--json]
@@ -225,7 +288,7 @@ repowiki-cli deepwiki list SEARCH [--json]
 
 搜索 DeepWiki 公开索引（逆向 `list_public_indexes`）。
 
-### `deepwiki status`
+### 📊 `deepwiki status`
 
 ```bash
 repowiki-cli deepwiki status REPO [--json]
@@ -234,7 +297,7 @@ repowiki-cli deepwiki status REPO [--json]
 查询仓库索引状态（逆向 `public_repo_indexing_status`）。未索引仓库返回 `unknown`
 属于正常结果，退出码 `0`。
 
-### `deepwiki warm`
+### 🔥 `deepwiki warm`
 
 ```bash
 repowiki-cli deepwiki warm REPO [--json]
@@ -242,7 +305,7 @@ repowiki-cli deepwiki warm REPO [--json]
 
 预热仓库文档缓存（逆向 `warm_public_repo`）。
 
-### `deepwiki get`
+### 📥 `deepwiki get`
 
 ```bash
 repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
@@ -250,7 +313,7 @@ repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
 
 按 query id 重放历史回答（逆向 `get_query`）。
 
-### `deepwiki stat`
+### 📈 `deepwiki stat`
 
 ```bash
 repowiki-cli deepwiki stat REPO [--human] [--stale] [--json]
@@ -267,7 +330,7 @@ repowiki-cli deepwiki stat REPO [--human] [--stale] [--json]
   —— 所以 `stat` 只能*检测*过期，无法修复。
 - `--json` — 输出 JSON 信封（设置 `--stale` 时附带 `stale`）。
 
-### `deepwiki cp`
+### 📤 `deepwiki cp`
 
 ```bash
 repowiki-cli deepwiki cp REPO [OUTPUT_DIR]
@@ -283,7 +346,7 @@ Markdown 文件，外加 `llms.txt`/`README.md`（索引）与 `llms-full.txt`�
 `llms.txt`（`- [title](NN-slug.md)` 链接索引）、内容相同的 `README.md`（供 GitHub
 自动渲染）与 `llms-full.txt`（合并全文）。
 
-### DeepWiki 设计
+### 🧩 DeepWiki 设计
 
 整个 CLI 共用同一个结果类型 `Answer`，让两个后端都接入同一套格式化层：
 
@@ -301,7 +364,7 @@ class Answer:
 MCP 后端只产生裸的 `Answer(body=...)`；逆向后端补齐 summary、references、sources、
 stats、query_id——`--json` 会全部携带。
 
-### DeepWiki 后端详解
+### 🔀 DeepWiki 后端详解
 
 **MCP 后端（`services/deepwiki/client.py`）**
 
@@ -353,7 +416,7 @@ WebSocket 流上观测到的事件类型：`snapshot`、`file_contents`、`stats
 | `POST` | `/ada/warm_public_repo?repo_name=` | `warm` |
 | `GET` | `/ada/query/{query_id}` | `get` |
 
-### DeepWiki 错误处理与退出码
+### 🚦 DeepWiki 错误处理与退出码
 
 异常被归入一个小型分类，并映射到退出码：
 
@@ -374,7 +437,7 @@ CLI 区分「未索引」和普通工具错误。
 {"error": "Could not connect to DeepWiki server...", "kind": "connection"}
 ```
 
-### DeepWiki 流式、重试与引用
+### 🌊 DeepWiki 流式、重试与引用
 
 仅适用于**逆向**后端。
 
@@ -406,13 +469,13 @@ CLI 区分「未索引」和普通工具错误。
 
 CLI 原样透传这些行号，不做偏移，也不重新解读。
 
-### DeepWiki Mermaid
+### 🧜 DeepWiki Mermaid
 
 `--mode codemap` 返回 codemap（形如 `{"traces": [...]}` 的 JSON）。`--mermaid` 把
 它渲染成 `flowchart TB`，每条 trace 一个子图并带配色。粘贴到 mermaid.live、GitHub
 或 VS Code 即可查看。若答案不是 codemap，`--mermaid` 会告警并打印纯文本。
 
-### DeepWiki 组合实践方案
+### 🍳 DeepWiki 组合实践方案
 
 以下组合按意图分组，仓库默认 `facebook/react`。
 
@@ -512,7 +575,7 @@ case $? in
 esac
 ```
 
-### DeepWiki MCP 服务
+### 🔌 DeepWiki MCP 服务
 
 官方 [DeepWiki MCP 服务](https://docs.devin.ai/work-with-devin/deepwiki-mcp) 免费、
 公开仓库无需鉴权。它暴露两种传输协议：Streamable HTTP（`/mcp`，推荐）与 SSE
@@ -529,7 +592,7 @@ claude mcp add -s user -t http deepwiki https://mcp.deepwiki.com/mcp
 <https://docs.devin.ai/llms.txt>。
 
 
-## CodeWiki
+## 🔷 CodeWiki
 
 [Google Code Wiki](https://codewiki.google) 是第二个 wiki 服务，挂在 `codewiki`
 命名空间下。CodeWiki **只读取公开仓库**、**无需鉴权**，不支持私有仓库。
@@ -550,13 +613,13 @@ repowiki-cli codewiki contents vercel/next.js           # 完整文档
 repowiki-cli codewiki ask facebook/react "What is Fiber?"
 ```
 
-### `codewiki structure`
+### 📋 `codewiki structure`
 
 打印仓库的 CodeWiki 文档目录。
 
 - `--json` — 输出 JSON 信封而非文本。
 
-### `codewiki contents`
+### 📄 `codewiki contents`
 
 打印仓库的完整 CodeWiki 文档，可能很大。
 
@@ -565,7 +628,7 @@ repowiki-cli codewiki ask facebook/react "What is Fiber?"
 - `--rich` — 用 `rich` 渲染 Markdown（带颜色和格式）。
 - `--json` — 输出 JSON 信封而非 Markdown。
 
-### `codewiki ask`
+### 💬 `codewiki ask`
 
 ```bash
 repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save [PATH]]
@@ -580,7 +643,7 @@ repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save [PATH]]
 - `--save [PATH]` — 把答案保存为 Markdown 文件（见「保存」）。裸 `--save`
   会在当前目录自动命名。
 
-### `codewiki stat`
+### 📈 `codewiki stat`
 
 ```bash
 repowiki-cli codewiki stat REPO [--stale] [--json]
@@ -601,7 +664,7 @@ repowiki-cli codewiki stat REPO [--stale] [--json]
 `commit.committer.date`；`shared/github.py::format_stale` 负责渲染结论。当
 GitHub sha `startswith` wiki 的（可能为短）sha 时，wiki 即为最新。
 
-### `codewiki cp`
+### 📤 `codewiki cp`
 
 ```bash
 repowiki-cli codewiki cp REPO [OUTPUT_DIR]
@@ -614,7 +677,7 @@ repowiki-cli codewiki cp REPO [OUTPUT_DIR]
 `dot` 图），全文由 `render_markdown` 渲染；两者都交给共享的
 `shared/export.py::export_pages` 助手（见 `deepwiki cp`）。
 
-## Zread
+## 📚 Zread
 
 [zread.ai](https://zread.ai) 是第三个 wiki 服务，挂在 `zread` 命名空间下。Zread
 提供预先生成的文档，**只读取公开仓库**，所有读取命令都**无需鉴权**；`ask` 和
@@ -650,14 +713,14 @@ repowiki-cli zread find react                        # 搜索仓库
 
 `--lang zh|en` 选择文档语言（默认 `en`，或环境变量 `ZREAD_LANG`）。
 
-### `zread structure`
+### 📋 `zread structure`
 
 打印仓库在 zread.ai 上的文档目录。
 
 - `--lang zh|en` — 语言。
 - `--json` — 输出 JSON 信封而非文本。
 
-### `zread contents`
+### 📄 `zread contents`
 
 打印某一页 Markdown 文档。不带 `SLUG` 时打印概览（第一）页。
 
@@ -673,7 +736,7 @@ repowiki-cli zread contents https://github.com/o/r/blob/main/src/a.py#L10-L20
 - `--rich` — 用 `rich` 渲染 Markdown。
 - `--json` — 输出 JSON 信封而非 Markdown。
 
-### `zread ask`
+### 💬 `zread ask`
 
 ```bash
 repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save [PATH]] [--stream] [--show-reasoning]
@@ -701,7 +764,7 @@ DevTools 控制台执行
   在回答之前流式下发）。`--stream` 模式下会先输出 `reasoning:` 块再输出
   `answer:` 块；否则以暗色打印在答案上方。与 `--json` 一起使用时无效。
 
-### `zread find`
+### 🔎 `zread find`
 
 在 zread.ai 上搜索仓库。
 
@@ -709,7 +772,7 @@ DevTools 控制台执行
 - `--lang zh|en` — 语言。
 - `--json` — 输出 JSON 信封。
 
-### `zread stat`
+### 📈 `zread stat`
 
 打印仓库在 zread.ai 上的信息与索引状态。
 
@@ -762,7 +825,7 @@ DevTools 控制台执行
 最新 (up-to-date): c0f97eda2f1f482fd94d3a38bece18c7069b4a5c
 ```
 
-### `zread search`
+### 🔍 `zread search`
 
 在仓库的 wiki 文档内搜索文本，返回匹配的页面标题与高亮片段。
 
@@ -773,21 +836,21 @@ repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
 - `--lang zh|en` — 语言。
 - `--json` — 输出 JSON 信封。
 
-### `zread top`
+### 🏆 `zread top`
 
 打印 zread.ai 趋势榜。`WEEKS` 限制显示的周分组数量。
 
 - `--lang zh|en` — 语言。
 - `--json` — 输出 JSON 信封。
 
-### `zread rand`
+### 🎲 `zread rand`
 
 打印随机仓库推荐，可用 `TOPIC` 按主题过滤。
 
 - `--lang zh|en` — 语言。
 - `--json` — 输出 JSON 信封。
 
-### `zread cp`
+### 📤 `zread cp`
 
 把整个 wiki 导出为 Markdown（`NN-slug.md` 文件）以及 `llms.txt`、`README.md` 和
 `llms-full.txt`，写入 `OUTPUT_DIR`（默认使用仓库名）。
@@ -795,7 +858,7 @@ repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
 - `--concurrency N` — 并发抓取页数（默认 `5`）。
 - `--lang zh|en` — 语言。
 
-### `zread submit`
+### 📮 `zread submit`
 
 向 zread.ai 提交仓库进行索引。需要一个 token（JWT）：登录 zread.ai 后，在 DevTools
 控制台执行
@@ -805,7 +868,7 @@ repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
 
 - `--json` — 输出 JSON 信封（含 `eta` 字段）。
 
-### `zread refresh`
+### 🔄 `zread refresh`
 
 请求对仓库的 wiki 重新索引（刷新）。无需鉴权。
 
@@ -815,7 +878,7 @@ repowiki-cli zread refresh REPO [--json]
 
 - `--json` — 输出 JSON 信封。
 
-## 开发
+## 🔨 开发
 
 ```bash
 uv sync
@@ -823,7 +886,7 @@ uv run pytest
 ```
 
 
-## 一些Wiki 相关工具
+## 🧰 一些Wiki 相关工具
 
 以下是同一领域的参考/替代 CLI，重造轮子前值得先看看：
 

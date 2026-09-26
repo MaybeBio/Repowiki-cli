@@ -1,13 +1,74 @@
-# repowiki-cli
+<div align="center">
 
-Query [DeepWiki](https://deepwiki.com), [Google Code Wiki](https://codewiki.google),
-and [zread.ai](https://zread.ai) documentation for any public GitHub repository
-from your terminal.
+<img src="./figs/banner.svg" alt="repowiki-cli" width="420" />
 
-> 中文文档见 [README.zh-CN.md](README.zh-CN.md) · Chinese docs:
-> [README.zh-CN.md](README.zh-CN.md)
+# Repowiki-cli
 
-## What it is
+**Query AI-generated documentation for any public GitHub repository — straight from your terminal.**
+
+One binary · one command surface · three wiki services: **DeepWiki** · **Google Code Wiki** · **zread.ai**
+
+[![PyPI](https://img.shields.io/pypi/v/pyrepowiki-cli.svg?logo=pypi&logoColor=white)](https://pypi.org/project/pyrepowiki-cli/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://pypi.org/project/pyrepowiki-cli/)
+[![Downloads](https://static.pepy.tech/badge/pyrepowiki-cli)](https://pepy.tech/project/pyrepowiki-cli)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/MaybeBio/Repowiki-cli/pulls)
+
+[English](README.md) · [中文](README.zh-CN.md) · [Install](#-install) · [Quick start](#-quick-start)
+
+</div>
+
+> **If this project helps you, please consider giving it a ⭐ Star.**
+
+## 📑 Index
+
+- [📑 Index](#-index)
+- [📖 What it is](#-what-it-is)
+- [📦 Install](#-install)
+- [🚀 Quick start](#-quick-start)
+- [🧭 Command overview](#-command-overview)
+- [🧱 Repo formats](#-repo-formats)
+- [🧾 JSON output](#-json-output)
+- [💾 Saving (`--save`)](#-saving---save)
+- [🔧 Environment variables](#-environment-variables)
+- [🧠 DeepWiki](#-deepwiki)
+  - [📋 `deepwiki structure`](#-deepwiki-structure)
+  - [📄 `deepwiki contents`](#-deepwiki-contents)
+  - [💬 `deepwiki ask`](#-deepwiki-ask)
+  - [📇 `deepwiki list`](#-deepwiki-list)
+  - [📊 `deepwiki status`](#-deepwiki-status)
+  - [🔥 `deepwiki warm`](#-deepwiki-warm)
+  - [📥 `deepwiki get`](#-deepwiki-get)
+  - [📈 `deepwiki stat`](#-deepwiki-stat)
+  - [📤 `deepwiki cp`](#-deepwiki-cp)
+  - [🧩 DeepWiki design](#-deepwiki-design)
+  - [🔀 DeepWiki backends in detail](#-deepwiki-backends-in-detail)
+  - [🚦 DeepWiki error handling and exit codes](#-deepwiki-error-handling-and-exit-codes)
+  - [🌊 DeepWiki streaming, retry, and citations](#-deepwiki-streaming-retry-and-citations)
+  - [🧜 DeepWiki Mermaid](#-deepwiki-mermaid)
+  - [🍳 DeepWiki usage recipes](#-deepwiki-usage-recipes)
+  - [🔌 DeepWiki MCP server](#-deepwiki-mcp-server)
+- [🔷 CodeWiki](#-codewiki)
+  - [📋 `codewiki structure`](#-codewiki-structure)
+  - [📄 `codewiki contents`](#-codewiki-contents)
+  - [💬 `codewiki ask`](#-codewiki-ask)
+  - [📈 `codewiki stat`](#-codewiki-stat)
+  - [📤 `codewiki cp`](#-codewiki-cp)
+- [📚 Zread](#-zread)
+  - [📋 `zread structure`](#-zread-structure)
+  - [📄 `zread contents`](#-zread-contents)
+  - [💬 `zread ask`](#-zread-ask)
+  - [🔎 `zread find`](#-zread-find)
+  - [📈 `zread stat`](#-zread-stat)
+  - [🔍 `zread search`](#-zread-search)
+  - [🏆 `zread top`](#-zread-top)
+  - [🎲 `zread rand`](#-zread-rand)
+  - [📤 `zread cp`](#-zread-cp)
+  - [📮 `zread submit`](#-zread-submit)
+  - [🔄 `zread refresh`](#-zread-refresh)
+- [🔨 Development](#-development)
+- [🧰 Wiki related tools](#-wiki-related-tools)
+
+## 📖 What it is
 
 `repowiki-cli` is a Python/Typer CLI that reads AI-generated repository
 documentation and answers questions about code, from the terminal. It speaks to
@@ -33,7 +94,7 @@ public repos with no auth. The reverse backend is the underlying engine
 API, but it exposes engine selection (`fast`/`deep`/`codemap`), streaming,
 conversation threading, and index-management endpoints that MCP does not.
 
-## Install
+## 📦 Install
 
 It is a standard Python package. The distribution is published on PyPI as
 **`pyrepowiki-cli`**, and it installs a console command named **`repowiki-cli`** —
@@ -68,7 +129,7 @@ uv sync
 uv run repowiki-cli --help
 ```
 
-## Quick start
+## 🚀 Quick start
 
 ```bash
 repowiki-cli deepwiki structure facebook/react          # table of contents
@@ -78,7 +139,7 @@ repowiki-cli codewiki ask facebook/react "What is Fiber?"
 repowiki-cli zread contents vercel/next.js              # overview page
 ```
 
-## Command overview
+## 🧭 Command overview
 
 | Command | Purpose | Service |
 |---------|---------|---------|
@@ -106,10 +167,10 @@ repowiki-cli zread contents vercel/next.js              # overview page
 | `cp REPO [OUTPUT_DIR]` | Export the whole wiki as Markdown + `llms.txt`/`README.md` | Zread |
 | `submit REPO` | Submit a repo for indexing (needs token) | Zread |
 
-Each service is documented in its own section below: [DeepWiki](#deepwiki),
-[CodeWiki](#codewiki), [Zread](#zread).
+Each service is documented in its own section below: [DeepWiki](#-deepwiki),
+[CodeWiki](#-codewiki), [Zread](#-zread).
 
-## Repo formats
+## 🧱 Repo formats
 
 `REPO` accepts any of:
 
@@ -120,7 +181,7 @@ Each service is documented in its own section below: [DeepWiki](#deepwiki),
 
 Everything is normalized to `owner/repo`.
 
-## JSON output
+## 🧾 JSON output
 
 Main commands emit an envelope with `repo` and `command`:
 
@@ -138,7 +199,7 @@ and `query_id` when the reverse backend provides them. Management commands
 (`list` / `status` / `warm` / `get` / `stat`) omit `repo` and use `command` +
 fields only. Errors go to stderr as `{"error": ..., "kind": ...}`.
 
-## Saving (`--save`)
+## 💾 Saving (`--save`)
 
 `--save` writes answers to a Markdown file:
 
@@ -150,7 +211,7 @@ fields only. Errors go to stderr as `{"error": ..., "kind": ...}`.
   answers append when the file already exists.
 - Combine with `--json` to keep stdout as JSON while writing Markdown to the file.
 
-## Environment variables
+## 🔧 Environment variables
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
@@ -167,12 +228,12 @@ fields only. Errors go to stderr as `{"error": ..., "kind": ...}`.
 | `REPOWIKI_CODEWIKI_MOCK` | mock CodeWiki result (tests) | — |
 | `REPOWIKI_ZREAD_MOCK` | mock Zread result (tests) | — |
 
-## DeepWiki
+## 🧠 DeepWiki
 
 [DeepWiki](https://deepwiki.com) is the primary service, exposed under the
 `deepwiki` namespace. It reads **public repositories** with **no auth**.
 
-### `deepwiki structure`
+### 📋 `deepwiki structure`
 
 ```bash
 repowiki-cli deepwiki structure REPO [--json]
@@ -180,7 +241,7 @@ repowiki-cli deepwiki structure REPO [--json]
 
 Prints the documentation table of contents (MCP `read_wiki_structure`).
 
-### `deepwiki contents`
+### 📄 `deepwiki contents`
 
 ```bash
 repowiki-cli deepwiki contents REPO [--page TITLE] [--rich] [--json]
@@ -195,7 +256,7 @@ Prints the full documentation (MCP `read_wiki_contents`), which can be large.
 - `--rich` — render Markdown with color/formatting via `rich`.
 - `--json` — emit a JSON envelope instead of Markdown.
 
-### `deepwiki ask`
+### 💬 `deepwiki ask`
 
 ```bash
 repowiki-cli deepwiki ask REPO [QUESTION] \
@@ -236,7 +297,7 @@ alone does **not** switch backends — pair it with `--mode codemap`.
   `--stream`.
 - `--json` — emit a JSON envelope. Ignored in interactive mode.
 
-### `deepwiki list`
+### 📇 `deepwiki list`
 
 ```bash
 repowiki-cli deepwiki list SEARCH [--json]
@@ -244,7 +305,7 @@ repowiki-cli deepwiki list SEARCH [--json]
 
 Searches DeepWiki's public index (reverse `list_public_indexes`).
 
-### `deepwiki status`
+### 📊 `deepwiki status`
 
 ```bash
 repowiki-cli deepwiki status REPO [--json]
@@ -253,7 +314,7 @@ repowiki-cli deepwiki status REPO [--json]
 Reports a repo's indexing state (reverse `public_repo_indexing_status`).
 `unknown` is a normal result for an unindexed repo and exits `0`.
 
-### `deepwiki warm`
+### 🔥 `deepwiki warm`
 
 ```bash
 repowiki-cli deepwiki warm REPO [--json]
@@ -261,7 +322,7 @@ repowiki-cli deepwiki warm REPO [--json]
 
 Pre-warms a repo's docs cache (reverse `warm_public_repo`).
 
-### `deepwiki get`
+### 📥 `deepwiki get`
 
 ```bash
 repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
@@ -269,7 +330,7 @@ repowiki-cli deepwiki get QUERY_ID [--rich] [--sources] [--json] [--mermaid]
 
 Replays a past answer by query id (reverse `get_query`).
 
-### `deepwiki stat`
+### 📈 `deepwiki stat`
 
 ```bash
 repowiki-cli deepwiki stat REPO [--human] [--stale] [--json]
@@ -286,7 +347,7 @@ short commit sha (last segment of the index `id`) and `last_modified` (the
   so `stat` can only *detect* staleness, not fix it.
 - `--json` — emit a JSON envelope (with `stale` when `--stale` is set).
 
-### `deepwiki cp`
+### 📤 `deepwiki cp`
 
 ```bash
 repowiki-cli deepwiki cp REPO [OUTPUT_DIR]
@@ -303,7 +364,7 @@ helper, which names each page `NN-slug.md` and also emits `llms.txt` (index of
 `- [title](NN-slug.md)` links), a `README.md` with the same index for GitHub
 auto-rendering, and `llms-full.txt` (the whole concatenated text).
 
-### DeepWiki design
+### 🧩 DeepWiki design
 
 The whole CLI shares one result type, `Answer`, so both backends feed the same
 formatting layer:
@@ -322,7 +383,7 @@ class Answer:
 The MCP backend produces a bare `Answer(body=...)`. The reverse backend fills in
 summary, references, sources, stats, and query_id — all carried by `--json`.
 
-### DeepWiki backends in detail
+### 🔀 DeepWiki backends in detail
 
 **MCP backend (`services/deepwiki/client.py`)**
 
@@ -378,7 +439,7 @@ Management endpoints:
 | `POST` | `/ada/warm_public_repo?repo_name=` | `warm` |
 | `GET` | `/ada/query/{query_id}` | `get` |
 
-### DeepWiki error handling and exit codes
+### 🚦 DeepWiki error handling and exit codes
 
 Exceptions are classified into a small taxonomy and mapped to an exit code:
 
@@ -400,7 +461,7 @@ With `--json`, errors go to **stderr** as a single line:
 {"error": "Could not connect to DeepWiki server...", "kind": "connection"}
 ```
 
-### DeepWiki streaming, retry, and citations
+### 🌊 DeepWiki streaming, retry, and citations
 
 This applies to the **reverse** backend only.
 
@@ -438,14 +499,14 @@ citation are model-estimated, so treat them as approximate rather than exact:
 The CLI passes these numbers through unchanged; it does not offset or
 re-interpret them.
 
-### DeepWiki Mermaid
+### 🧜 DeepWiki Mermaid
 
 `--mode codemap` returns a codemap (a `{"traces": [...]}` JSON blob). `--mermaid`
 renders it as a `flowchart TB` with per-trace subgraphs and color styling. Paste
 the output into mermaid.live, GitHub, or VS Code to view it. If the answer is
 not a codemap, `--mermaid` warns and prints the plain text.
 
-### DeepWiki usage recipes
+### 🍳 DeepWiki usage recipes
 
 The combinations below are grouped by intent. All assume `facebook/react` as the
 repo unless noted.
@@ -546,7 +607,7 @@ case $? in
 esac
 ```
 
-### DeepWiki MCP server
+### 🔌 DeepWiki MCP server
 
 The official [DeepWiki MCP server](https://docs.devin.ai/work-with-devin/deepwiki-mcp)
 is free and requires no auth for public repos. It exposes two wire protocols:
@@ -564,7 +625,7 @@ Private repositories are out of scope for `repowiki-cli`; use the
 API key. The full documentation index lives at
 <https://docs.devin.ai/llms.txt>.
 
-## CodeWiki
+## 🔷 CodeWiki
 
 [Google Code Wiki](https://codewiki.google) is a second wiki service, exposed
 under the `codewiki` namespace. CodeWiki reads **public repositories only** and
@@ -586,13 +647,13 @@ repowiki-cli codewiki contents vercel/next.js           # full documentation
 repowiki-cli codewiki ask facebook/react "What is Fiber?"
 ```
 
-### `codewiki structure`
+### 📋 `codewiki structure`
 
 Prints the CodeWiki table of contents for a repository.
 
 - `--json` — emit a JSON envelope instead of text.
 
-### `codewiki contents`
+### 📄 `codewiki contents`
 
 Prints the full CodeWiki documentation for a repository, which can be large.
 
@@ -602,7 +663,7 @@ Prints the full CodeWiki documentation for a repository, which can be large.
 - `--rich` — render Markdown with color/formatting via `rich`.
 - `--json` — emit a JSON envelope instead of Markdown.
 
-### `codewiki ask`
+### 💬 `codewiki ask`
 
 ```bash
 repowiki-cli codewiki ask REPO [QUESTION] [--rich] [--json] [--save [PATH]]
@@ -618,7 +679,7 @@ continuation).
 - `--save [PATH]` — save the answer to a Markdown file (see *Saving*). A bare
   `--save` auto-names the file in the current directory.
 
-### `codewiki stat`
+### 📈 `codewiki stat`
 
 ```bash
 repowiki-cli codewiki stat REPO [--stale] [--json]
@@ -641,7 +702,7 @@ which does `GET https://api.github.com/repos/{owner}/{name}/commits/HEAD` (with
 renders the verdict. A wiki is current when the GitHub sha `startswith` the
 wiki's (possibly short) sha.
 
-### `codewiki cp`
+### 📤 `codewiki cp`
 
 ```bash
 repowiki-cli codewiki cp REPO [OUTPUT_DIR]
@@ -656,7 +717,7 @@ Exports the full wiki as one Markdown file per section, plus `llms.txt` /
 text via `render_markdown`; both feed the shared `shared/export.py::export_pages`
 helper (see `deepwiki cp`).
 
-## Zread
+## 📚 Zread
 
 [zread.ai](https://zread.ai) is a third wiki service, exposed under the `zread`
 namespace. Zread serves pre-generated docs for **public repositories**, and all
@@ -696,14 +757,14 @@ repowiki-cli zread find react                        # search repositories
 The `--lang zh|en` flag selects the documentation language (default `en`, or the
 `ZREAD_LANG` environment variable).
 
-### `zread structure`
+### 📋 `zread structure`
 
 Prints the zread.ai table of contents for a repository.
 
 - `--lang zh|en` — language.
 - `--json` — emit a JSON envelope instead of text.
 
-### `zread contents`
+### 📄 `zread contents`
 
 Prints a single page of Markdown documentation. With no `SLUG`, it prints the
 overview (first) page.
@@ -722,7 +783,7 @@ repowiki-cli zread contents https://github.com/o/r/blob/main/src/a.py#L10-L20
 - `--rich` — render Markdown with `rich`.
 - `--json` — emit a JSON envelope instead of Markdown.
 
-### `zread ask`
+### 💬 `zread ask`
 
 ```bash
 repowiki-cli zread ask REPO [QUESTION] [--model MODEL] [--rich] [--json] [--save [PATH]] [--stream] [--show-reasoning]
@@ -757,7 +818,7 @@ the token. Set it as the `ZREAD_TOKEN` environment variable.
   it prints a `reasoning:` block before the `answer:` block; otherwise it prints
   the trace dimmed above the answer. Has no effect with `--json`.
 
-### `zread find`
+### 🔎 `zread find`
 
 Searches zread.ai for repositories.
 
@@ -765,7 +826,7 @@ Searches zread.ai for repositories.
 - `--lang zh|en` — language.
 - `--json` — emit a JSON envelope.
 
-### `zread stat`
+### 📈 `zread stat`
 
 Prints repository info and index status on zread.ai.
 
@@ -818,7 +879,7 @@ Prints repository info and index status on zread.ai.
 最新 (up-to-date): c0f97eda2f1f482fd94d3a38bece18c7069b4a5c
 ```
 
-### `zread search`
+### 🔍 `zread search`
 
 Searches within a repository's wiki documentation for matching text, returning
 the page title and highlighted matches.
@@ -830,21 +891,21 @@ repowiki-cli zread search REPO QUERY [--lang zh|en] [--json]
 - `--lang zh|en` — language.
 - `--json` — emit a JSON envelope.
 
-### `zread top`
+### 🏆 `zread top`
 
 Prints the zread.ai trending list. `WEEKS` limits the number of week-groups shown.
 
 - `--lang zh|en` — language.
 - `--json` — emit a JSON envelope.
 
-### `zread rand`
+### 🎲 `zread rand`
 
 Prints a random repository recommendation, optionally filtered by `TOPIC`.
 
 - `--lang zh|en` — language.
 - `--json` — emit a JSON envelope.
 
-### `zread cp`
+### 📤 `zread cp`
 
 Exports the whole wiki as Markdown (`NN-slug.md` files) plus `llms.txt`,
 `README.md`, and `llms-full.txt` into `OUTPUT_DIR` (defaults to the repository
@@ -853,7 +914,7 @@ name).
 - `--concurrency N` — parallel page fetches (default `5`).
 - `--lang zh|en` — language.
 
-### `zread submit`
+### 📮 `zread submit`
 
 Submits a repository for indexing on zread.ai. Requires a token (a JWT): log in
 to zread.ai, run
@@ -864,7 +925,7 @@ warning and skips. On success it also reports the indexing queue wait
 
 - `--json` — emit a JSON envelope (includes an `eta` field).
 
-### `zread refresh`
+### 🔄 `zread refresh`
 
 Requests a re-index (refresh) of a repository's wiki. No auth required.
 
@@ -874,14 +935,14 @@ repowiki-cli zread refresh REPO [--json]
 
 - `--json` — emit a JSON envelope.
 
-## Development
+## 🔨 Development
 
 ```bash
 uv sync
 uv run pytest
 ```
 
-## Wiki related tools
+## 🧰 Wiki related tools
 
 These are reference/alternative CLIs for the same space — worth consulting
 before re-implementing anything:
