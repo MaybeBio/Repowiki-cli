@@ -17,6 +17,8 @@ One binary · one command surface · three wiki services: **DeepWiki** · **Goog
 
 [English](README.md) · [中文](README.zh-CN.md) · [Install](#-install) · [Quick start](#-quick-start)
 
+<img src="docs/demo/header.gif" alt="A repowiki-cli session across all three services: DeepWiki structure, ask and a streaming REPL; CodeWiki structure and ask; Zread repository search, stat with a staleness check, and a streaming ask" width="880" />
+
 </div>
 
 > **If this project helps you, please consider giving it a ⭐ Star.**

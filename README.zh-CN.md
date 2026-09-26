@@ -27,6 +27,8 @@
   <a href="#-快速上手">快速上手</a> 
 </p>
 
+<img src="docs/demo/header.gif" alt="repowiki-cli 一次跑通三个服务：DeepWiki 的 structure、ask 与流式 REPL；CodeWiki 的 structure 与 ask；Zread 的仓库搜索、stat 鲜度检查与流式提问" width="880" />
+
 </div>
 
 > **如果这个项目对你有帮助，欢迎点亮一个 ⭐ Star。**
