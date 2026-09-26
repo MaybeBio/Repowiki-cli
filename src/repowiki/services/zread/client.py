@@ -450,24 +450,73 @@ class ZreadClient:
             "context": context,
             "model": self._model,
         }
-        async with self._http(timeout=120.0) as http:
-            async with http.stream("POST", url, headers=headers, json=body) as resp:
-                if resp.status_code in (403, 429, 503):
-                    raise ZreadChallengeError(f"Zread returned HTTP {resp.status_code}")
-                if resp.status_code == 404:
-                    raise ZreadNotFoundError(f"talk not found: {talk_id}")
-                if not resp.is_success:
-                    await resp.aread()
-                    detail = _error_detail(resp)
-                    raise ZreadError(
-                        f"Zread returned HTTP {resp.status_code} for {url}"
-                        + (f": {detail}" if detail else "")
+        for attempt in range(1, self._retries + 1):
+            # Once chunks have reached the caller, a retry would replay them, so
+            # a drop is only recoverable while nothing has been emitted yet.
+            emitted = False
+
+            def mark(callback, text):
+                nonlocal emitted
+                emitted = True
+                if callback is not None:
+                    callback(text)
+
+            parser = _SSEParser(
+                (lambda t: mark(on_chunk, t)) if on_chunk else None,
+                (lambda t: mark(on_reasoning, t)) if on_reasoning else None,
+            )
+            retry_wait: float | None = None
+            try:
+                async with self._http(timeout=120.0) as http:
+                    async with http.stream("POST", url, headers=headers, json=body) as resp:
+                        if resp.status_code == 429 and attempt < self._retries:
+                            wait = backoff(attempt)
+                            try:
+                                wait = max(wait, float(resp.headers.get("Retry-After", "")))
+                            except ValueError:
+                                pass
+                            retry_wait = wait
+                        elif resp.status_code in TRANSIENT_STATUS and attempt < self._retries:
+                            retry_wait = backoff(attempt)
+                        elif resp.status_code in (403, 429, 503):
+                            raise ZreadChallengeError(
+                                f"Zread returned HTTP {resp.status_code} (Cloudflare)"
+                            )
+                        elif resp.status_code == 404:
+                            raise ZreadNotFoundError(f"talk not found: {talk_id}")
+                        elif resp.status_code in TRANSIENT_STATUS:
+                            raise ZreadConnectionError(
+                                f"Zread returned HTTP {resp.status_code} "
+                                f"after {self._retries} attempts"
+                            )
+                        elif not resp.is_success:
+                            await resp.aread()
+                            detail = _error_detail(resp)
+                            raise ZreadError(
+                                f"Zread returned HTTP {resp.status_code} for {url}"
+                                + (f": {detail}" if detail else "")
+                            )
+                        else:
+                            async for line in resp.aiter_lines():
+                                if parser.feed(line):
+                                    break
+                            return parser.text, parser.message_id
+            except httpx.TransportError as exc:
+                message = f"Failed to connect to Zread: {exc}"
+                if _is_cert_error(exc):
+                    message += (
+                        " (TLS certificate verification failed; set SSL_CERT_FILE "
+                        "to your CA bundle to trust a proxy/mirror)"
                     )
-                parser = _SSEParser(on_chunk, on_reasoning)
-                async for line in resp.aiter_lines():
-                    if parser.feed(line):
-                        break
-        return parser.text, parser.message_id
+                    raise ZreadConnectionError(message) from exc
+                if emitted or attempt >= self._retries:
+                    raise ZreadConnectionError(message) from exc
+                retry_wait = backoff(attempt)
+            if retry_wait is not None:
+                await asyncio.sleep(retry_wait)
+        raise ZreadConnectionError(
+            f"Zread talk request failed after {self._retries} attempts"
+        )
 
 
 class ZreadTalk:

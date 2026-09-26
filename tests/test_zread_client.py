@@ -440,3 +440,191 @@ def test_is_cert_error_detects_ssl_verification():
     exc.__cause__ = cert
     assert _is_cert_error(exc)
     assert not _is_cert_error(httpx.ConnectError("connection refused"))
+
+
+# --- talk message retry/recovery -------------------------------------------
+
+_DONE = 'event: finish\ndata: {"id": "m1"}\n\n'
+
+
+def _answer(text: str) -> str:
+    return f'event: answer\ndata: {{"id": "m1", "text": "{text}"}}\n\n'
+
+
+def _sse(*parts: str) -> bytes:
+    return "".join(parts).encode()
+
+
+class _DropMidStream(httpx.AsyncByteStream):
+    """Yield one chunk, then drop the connection mid-stream."""
+
+    def __init__(self, first: bytes) -> None:
+        self._first = first
+
+    async def __aiter__(self):
+        yield self._first
+        raise httpx.ReadError("Server disconnected without sending a response.")
+
+
+def _send(client, on_chunk=None):
+    return run_async(
+        client._send_message("t1", "q?", "w1", "p1", "r1", on_chunk=on_chunk)
+    )
+
+
+def test_send_message_retries_transport_error_before_output(monkeypatch):
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+    calls = {"n": 0}
+    body = _sse(_answer("hello"), _DONE)
+
+    def handler(request):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ConnectError("connection refused")
+        return httpx.Response(200, content=body,
+                              headers={"content-type": "text/event-stream"})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", retries=5)
+    text, _ = _send(client)
+    assert text == "hello"
+    assert calls["n"] == 2
+
+
+def test_send_message_retries_transient_status(monkeypatch):
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+    calls = {"n": 0}
+    body = _sse(_answer("hello"), _DONE)
+
+    def handler(request):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(503)
+        return httpx.Response(200, content=body,
+                              headers={"content-type": "text/event-stream"})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", retries=5)
+    text, _ = _send(client)
+    assert text == "hello"
+    assert calls["n"] == 3
+
+
+def test_send_message_honours_retry_after(monkeypatch):
+    import repowiki.services.zread.client as mod
+
+    sleeps = []
+
+    async def capture(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(mod.asyncio, "sleep", capture)
+    calls = {"n": 0}
+    body = _sse(_answer("ok"), _DONE)
+
+    def handler(request):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, headers={"Retry-After": "7"})
+        return httpx.Response(200, content=body,
+                              headers={"content-type": "text/event-stream"})
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", retries=5)
+    text, _ = _send(client)
+    assert text == "ok"
+    assert calls["n"] == 2
+    assert sleeps == [7.0]
+
+
+def test_send_message_does_not_retry_after_partial_output(monkeypatch):
+    """A drop after chunks were shown must not be retried (it would duplicate)."""
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+    calls = {"n": 0}
+    chunks = []
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(
+            200,
+            stream=_DropMidStream(_answer("partial").encode()),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", retries=5)
+    with pytest.raises(ZreadConnectionError):
+        _send(client, on_chunk=chunks.append)
+    assert calls["n"] == 1
+    assert chunks == ["partial"]
+
+
+def test_send_message_exhausted_transient_status_raises(monkeypatch):
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+
+    def handler(request):
+        return httpx.Response(504)
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", retries=2)
+    with pytest.raises(ZreadConnectionError):
+        _send(client)
+
+
+def test_send_message_exhausted_503_raises_challenge(monkeypatch):
+    """503 is retried, then surfaces as a Cloudflare-style challenge."""
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+
+    def handler(request):
+        return httpx.Response(503)
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", retries=2)
+    with pytest.raises(ZreadChallengeError):
+        _send(client)
+
+
+def test_send_message_exhausted_transport_error_raises(monkeypatch):
+    import repowiki.services.zread.client as mod
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        raise httpx.ConnectError("connection refused")
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", retries=3)
+    with pytest.raises(ZreadConnectionError):
+        _send(client)
+    assert calls["n"] == 3
+
+
+def test_send_message_does_not_retry_403():
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(403)
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", retries=5)
+    with pytest.raises(ZreadChallengeError):
+        _send(client)
+    assert calls["n"] == 1
+
+
+def test_send_message_does_not_retry_404():
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(404)
+
+    client = ZreadClient(transport=httpx.MockTransport(handler), token="tok", retries=5)
+    with pytest.raises(ZreadNotFoundError):
+        _send(client)
+    assert calls["n"] == 1
