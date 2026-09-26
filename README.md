@@ -68,6 +68,7 @@ One binary · one command surface · three wiki services: **DeepWiki** · **Goog
   - [📮 `zread submit`](#-zread-submit)
   - [🔄 `zread refresh`](#-zread-refresh)
 - [🔨 Development](#-development)
+  - [🔒 Lockfile](#-lockfile)
 - [🧰 Wiki related tools](#-wiki-related-tools)
 
 ## 📖 What it is
@@ -948,6 +949,27 @@ repowiki-cli zread refresh REPO [--json]
 ```bash
 uv sync
 uv run pytest
+```
+
+### 🔒 Lockfile
+
+`uv.lock` pins the exact version and hash of every dependency (transitive ones
+included) across every supported platform and Python version. **Commit it** —
+it is what makes `uv sync` reproducible on another machine and in CI.
+
+- **Don't hand-edit it.** It is generated; the next `uv sync` overwrites manual
+  changes.
+- **Bumping `version` in `pyproject.toml` also changes `uv.lock`** — the lock
+  records the project itself (`source = { editable = "." }`), so a one-line
+  change there is expected, not stray.
+- **Use `uv sync --frozen` in CI** so an out-of-date lock fails the build
+  instead of silently re-resolving the dependency graph.
+
+```bash
+uv lock              # re-resolve and update uv.lock
+uv sync              # install exactly what the lock pins
+uv sync --frozen     # never update the lock (CI)
+uv lock --upgrade    # upgrade within the ranges in pyproject.toml
 ```
 
 ## 🧰 Wiki related tools

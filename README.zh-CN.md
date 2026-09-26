@@ -78,6 +78,7 @@
   - [📮 `zread submit`](#-zread-submit)
   - [🔄 `zread refresh`](#-zread-refresh)
 - [🔨 开发](#-开发)
+  - [🔒 锁文件](#-锁文件)
 - [🧰 一些Wiki 相关工具](#-一些wiki-相关工具)
 
 ## 📖 这是什么
@@ -903,6 +904,23 @@ uv sync
 uv run pytest
 ```
 
+### 🔒 锁文件
+
+`uv.lock` 锁定了每个依赖（含传递依赖）的确切版本与哈希，并覆盖所有受支持的
+平台与 Python 版本。**要提交进 git** —— 它才是 `uv sync` 能在别的机器和 CI 上
+可复现的原因。
+
+- **不要手改**：它由 uv 生成，下次 `uv sync` 会覆盖手工修改。
+- **改 `pyproject.toml` 里的 `version` 也会改动 `uv.lock`** —— 锁文件里同样记录了
+  项目自身（`source = { editable = "." }`），所以那里变动一行是正常的，不是杂散改动。
+- **CI 里用 `uv sync --frozen`**：锁文件过期时让构建直接失败，而不是悄悄重新解析依赖图。
+
+```bash
+uv lock              # 重新解析并更新 uv.lock
+uv sync              # 严格按锁文件安装
+uv sync --frozen     # 绝不更新锁文件（CI 用）
+uv lock --upgrade    # 在 pyproject 允许的范围内升级依赖
+```
 
 ## 🧰 一些Wiki 相关工具
 
